@@ -89,9 +89,11 @@ export async function POST(req: Request) {
         },
       ],
       usage: {
-        prompt_tokens: result.usage.promptTokens,
-        completion_tokens: result.usage.completionTokens,
-        total_tokens: result.usage.promptTokens + result.usage.completionTokens,
+        prompt_tokens: result.usage.inputTokens ?? 0,
+        completion_tokens: result.usage.outputTokens ?? 0,
+        total_tokens:
+          result.usage.totalTokens ??
+          (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
       },
     });
   } catch (err) {

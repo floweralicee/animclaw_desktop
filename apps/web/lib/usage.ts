@@ -50,15 +50,16 @@ async function reportToStripe(
   totalTokens: number,
 ): Promise<void> {
   const meteredPriceId = process.env.STRIPE_METERED_PRICE_ID;
-  if (!meteredPriceId) return;
+  const meterEventName = process.env.STRIPE_USAGE_METER_EVENT_NAME;
+  if (!meteredPriceId || !meterEventName) return;
 
   const { data: sub } = await supabase
     .from("subscriptions")
-    .select("stripe_subscription_id")
+    .select("stripe_subscription_id, stripe_customer_id")
     .eq("user_id", userId)
     .single();
 
-  if (!sub?.stripe_subscription_id) return;
+  if (!sub?.stripe_subscription_id || !sub.stripe_customer_id) return;
 
   try {
     const subscription = await stripe.subscriptions.retrieve(
@@ -69,10 +70,14 @@ async function reportToStripe(
     );
     if (!meteredItem) return;
 
-    await stripe.subscriptionItems.createUsageRecord(meteredItem.id, {
-      quantity: totalTokens,
+    await stripe.billing.meterEvents.create({
+      event_name: meterEventName,
+      payload: {
+        stripe_customer_id: sub.stripe_customer_id,
+        value: String(totalTokens),
+      },
       timestamp: Math.floor(Date.now() / 1000),
-      action: "increment",
+      identifier: crypto.randomUUID(),
     });
   } catch (err) {
     console.error("[gateway] Stripe usage report failed:", err);
