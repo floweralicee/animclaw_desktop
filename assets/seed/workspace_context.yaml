@@ -1,0 +1,38 @@
+# workspace_context.yaml
+# AnimClaw workspace configuration
+# Managed by the workspace owner. Do not edit manually unless intentional.
+
+organization:
+  id: "org_alicechen_animation_solo"
+  name: "AI Animation Studio"
+  slug: "alicechen-animation"
+  type: "solo"
+  industry: "Animation / Film Production"
+  description: "One-person AI animation production studio."
+
+members:
+  - id: "usr_alicechen_000000000001"
+    name: "Alice Chen"
+    email: "alice@animclaw.com"
+    role: "owner"
+
+protected_objects:
+  - script
+  - shot
+  - task
+
+integrations: []
+
+enrichment:
+  enabled: false
+  provider: null
+
+defaults:
+  default_view: "kanban"
+  date_format: "YYYY-MM-DD"
+  naming_convention: "snake_case"
+  team_size: "solo"
+  domain: "animation"
+
+credits:
+  balance: 0

@@ -1,0 +1,20 @@
+packages:
+  - .
+  - apps/web
+  - apps/desktop
+
+onlyBuiltDependencies:
+  - "@lydell/node-pty"
+  - "@matrix-org/matrix-sdk-crypto-nodejs"
+  - "@napi-rs/canvas"
+  - "@whiskeysockets/baileys"
+  - authenticate-pam
+  - electron
+  - electron-winstaller
+  - esbuild
+  - fs-xattr
+  - macos-alias
+  - node-llama-cpp
+  - node-pty
+  - protobufjs
+  - sharp

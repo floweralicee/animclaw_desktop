@@ -1,0 +1,93 @@
+{
+  "name": "animclaw",
+  "version": "1.0.1",
+  "description": "Fully Managed OpenClaw Framework for managing your CRM, Sales Automation and Outreach agents. The only local productivity tool you need.",
+  "keywords": [],
+  "homepage": "https://github.com/AnimClaw/AnimClaw#readme",
+  "bugs": {
+    "url": "https://github.com/AnimClaw/AnimClaw/issues"
+  },
+  "license": "MIT",
+  "author": "Kumar Abhirup <kumar@animclaw.com>, AnimClaw.com <support@animclaw.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AnimClaw/AnimClaw.git"
+  },
+  "bin": {
+    "animclaw": "animclaw.mjs"
+  },
+  "files": [
+    "apps/web/.next/standalone/",
+    "apps/web/.next/static/",
+    "apps/web/public/",
+    "LICENSE",
+    "animclaw.mjs",
+    "README.md",
+    "assets/",
+    "dist/",
+    "extensions/",
+    "skills/"
+  ],
+  "type": "module",
+  "main": "dist/entry.js",
+  "exports": {
+    ".": "./dist/entry.js",
+    "./cli-entry": "./animclaw.mjs"
+  },
+  "scripts": {
+    "animclaw": "node animclaw.mjs",
+    "build": "tsdown",
+    "build:plugin-env": "node scripts/build-plugin-env.mjs",
+    "check": "pnpm format:check && pnpm lint",
+    "deploy": "set -a && source .env && set +a && bash scripts/deploy.sh",
+    "deploy:major": "set -a && source .env && set +a && bash scripts/deploy.sh --bump major",
+    "deploy:minor": "set -a && source .env && set +a && bash scripts/deploy.sh --bump minor",
+    "deploy:patch": "set -a && source .env && set +a && bash scripts/deploy.sh --bump patch",
+    "dev": "node animclaw.mjs",
+    "format": "oxfmt --write",
+    "format:check": "oxfmt --check",
+    "lint": "oxlint --type-aware",
+    "prepack": "pnpm build:plugin-env && pnpm build && pnpm web:build && pnpm web:prepack",
+    "start": "node animclaw.mjs",
+    "test": "pnpm test:cli && pnpm --dir apps/web test",
+    "test:cli": "vitest run --config vitest.unit.config.ts src/cli/run-main.test.ts src/cli/bootstrap-external.test.ts src/cli/bootstrap-external.bootstrap-command.test.ts src/cli/workspace-seed.test.ts src/cli/web-runtime.test.ts src/cli/web-runtime-command.test.ts src/cli/flatten-standalone-deps.test.ts",
+    "test:web": "pnpm --dir apps/web test",
+    "web:build": "pnpm --dir apps/web build",
+    "web:dev": "pnpm --dir apps/web dev",
+    "web:install": "pnpm --dir apps/web install",
+    "web:prepack": "cp -r apps/web/public apps/web/.next/standalone/apps/web/public && cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static && node scripts/flatten-standalone-deps.mjs",
+    "desktop:dev": "concurrently --kill-others \"pnpm --filter animclaw-web dev\" \"sleep 5 && pnpm --filter animclaw-desktop start\"",
+    "desktop:vendor": "node scripts/download-vendor-bins.mjs",
+    "desktop:build": "pnpm build && pnpm web:build && pnpm web:prepack && pnpm desktop:vendor && pnpm --filter animclaw-desktop make",
+    "desktop:publish": "pnpm --filter animclaw-desktop publish"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.0.1",
+    "chalk": "^5.6.2",
+    "commander": "^14.0.3",
+    "gradient-string": "^3.0.0",
+    "json5": "^2.2.3",
+    "posthog-node": "^5.27.1",
+    "tslog": "^4.10.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "concurrently": "^9.2.1",
+    "oxfmt": "0.34.0",
+    "oxlint": "^1.49.0",
+    "oxlint-tsgolint": "^0.14.2",
+    "tsdown": "^0.20.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.1.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@10.23.0",
+  "pnpm": {
+    "minimumReleaseAge": 2880
+  }
+}

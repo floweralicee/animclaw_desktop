@@ -1,0 +1,24 @@
+{
+  "name": "animclaw",
+  "version": "1.0.1",
+  "description": "Shorthand alias for animclaw — AI-powered CRM platform CLI",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openclaw/openclaw.git",
+    "directory": "packages/animclaw"
+  },
+  "bin": {
+    "animclaw": "animclaw.mjs"
+  },
+  "files": [
+    "animclaw.mjs"
+  ],
+  "type": "module",
+  "dependencies": {
+    "animclaw": "^1.0.1"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
