@@ -75,7 +75,7 @@
     "concurrently": "^9.2.1",
     "oxfmt": "0.34.0",
     "oxlint": "^1.49.0",
-    "oxlint-tsgolint": "^0.14.2",
+    "oxlint-tsgolint": "^0.17.4",
     "tsdown": "^0.20.3",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
