@@ -21,6 +21,9 @@ export async function POST() {
           ? [{ price: process.env.STRIPE_METERED_PRICE_ID }]
           : []),
       ],
+      subscription_data: {
+        trial_period_days: 7,
+      },
       success_url: `${process.env.NEXTAUTH_URL ?? "http://localhost:3100"}/checkout/complete?status=success`,
       cancel_url: `${process.env.NEXTAUTH_URL ?? "http://localhost:3100"}/checkout/complete?status=cancelled`,
       metadata: {

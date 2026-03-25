@@ -90,6 +90,24 @@ export async function listApiKeys(userId: string) {
 }
 
 /**
+ * Create a "Default" key for a user only if they have zero active keys.
+ * Returns the raw key when one is created, or null if keys already exist.
+ */
+export async function ensureDefaultApiKey(
+  userId: string,
+): Promise<{ key: string; id: string; prefix: string } | null> {
+  const { count } = await supabase
+    .from("api_keys")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .is("revoked_at", null);
+
+  if ((count ?? 0) > 0) return null;
+
+  return generateApiKey(userId, "Default");
+}
+
+/**
  * Soft-revoke a key by setting `revoked_at`.
  */
 export async function revokeApiKey(

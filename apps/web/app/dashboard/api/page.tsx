@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { signOut } from "next-auth/react";
 
 type ApiKey = {
   id: string;
@@ -59,8 +60,10 @@ export default function ApiDashboardPage() {
       const res = await fetch("/api/gateway/keys");
       const data = await res.json();
       setKeys(data.keys ?? []);
+      return data.keys ?? [];
     } catch {
       setError("Failed to load API keys");
+      return [];
     }
   }, []);
 
@@ -75,8 +78,23 @@ export default function ApiDashboardPage() {
   }, []);
 
   useEffect(() => {
-    fetchKeys();
-    fetchUsage();
+    async function init() {
+      const [currentKeys] = await Promise.all([fetchKeys(), fetchUsage()]);
+      const hasActive = currentKeys.some((k: ApiKey) => !k.revoked_at);
+      if (!hasActive) {
+        try {
+          const res = await fetch("/api/gateway/keys/ensure", { method: "POST" });
+          const data = await res.json();
+          if (data.created && data.key) {
+            setCreatedKey(data.key);
+            fetchKeys();
+          }
+        } catch {
+          // silent — user can still create manually
+        }
+      }
+    }
+    init();
   }, [fetchKeys, fetchUsage]);
 
   async function handleCreateKey() {
@@ -130,19 +148,33 @@ export default function ApiDashboardPage() {
     >
       <div className="mx-auto max-w-4xl space-y-8">
         {/* Header */}
-        <div>
-          <h1
-            className="text-3xl font-semibold"
-            style={{
-              color: "var(--color-text)",
-              fontFamily: "'Instrument Serif', serif",
-            }}
+        <div className="flex items-start justify-between">
+          <div>
+            <h1
+              className="text-3xl font-semibold"
+              style={{
+                color: "var(--color-text)",
+                fontFamily: "'Instrument Serif', serif",
+              }}
+            >
+              API Dashboard
+            </h1>
+            <p className="mt-1 text-sm" style={{ color: "var(--color-text-muted)" }}>
+              Manage your Animclaw API keys and monitor usage
+            </p>
+          </div>
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm transition-all hover:opacity-80"
+            style={{ color: "var(--color-text-muted)" }}
           >
-            API Dashboard
-          </h1>
-          <p className="mt-1 text-sm" style={{ color: "var(--color-text-muted)" }}>
-            Manage your Animclaw API keys and monitor usage
-          </p>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" x2="9" y1="12" y2="12" />
+            </svg>
+            Sign out
+          </button>
         </div>
 
         {error && (

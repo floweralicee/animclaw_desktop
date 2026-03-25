@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createGateway, streamText, generateText } from "ai";
+import { createGateway, streamText, generateText, type ModelMessage } from "ai";
 import { authenticateGatewayRequest } from "@/lib/gateway-auth";
 import { resolveModel } from "@/lib/gateway-models";
 import { logUsage } from "@/lib/usage";
@@ -60,17 +60,16 @@ export async function POST(req: Request) {
     if (stream) {
       const result = streamText({
         model,
-        messages: messages as Parameters<typeof streamText>[0]["messages"],
+        messages: messages as ModelMessage[],
         temperature: body.temperature as number | undefined,
-        maxTokens: (body.max_tokens ?? body.max_completion_tokens) as number | undefined,
+        maxOutputTokens: (body.max_tokens ?? body.max_completion_tokens) as number | undefined,
         topP: body.top_p as number | undefined,
       });
 
-      const response = result.toDataStreamResponse();
+      const response = result.toTextStreamResponse();
 
-      result.then(async (final) => {
-        const usage = await final.usage;
-        await logUsage({
+      result.usage.then((usage) => {
+        logUsage({
           userId: authResult.userId,
           apiKeyId: authResult.apiKeyId,
           model: modelId,
@@ -86,9 +85,9 @@ export async function POST(req: Request) {
 
     const result = await generateText({
       model,
-      messages: messages as Parameters<typeof generateText>[0]["messages"],
+      messages: messages as ModelMessage[],
       temperature: body.temperature as number | undefined,
-      maxTokens: (body.max_tokens ?? body.max_completion_tokens) as number | undefined,
+      maxOutputTokens: (body.max_tokens ?? body.max_completion_tokens) as number | undefined,
       topP: body.top_p as number | undefined,
     });
 

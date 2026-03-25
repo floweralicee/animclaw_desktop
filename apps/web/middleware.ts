@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
+import { isSubscriptionActive } from "@/lib/subscription";
 
 const PUBLIC_PATHS = ["/login", "/api/auth", "/api/billing/webhook", "/checkout", "/api/v1"];
 
@@ -24,7 +25,7 @@ export default auth((req) => {
   }
 
   const subStatus = (session as any).subscriptionStatus;
-  if (subStatus !== "active" && !pathname.startsWith("/subscribe") && !pathname.startsWith("/api/billing")) {
+  if (!isSubscriptionActive(subStatus) && !pathname.startsWith("/subscribe") && !pathname.startsWith("/api/billing")) {
     return NextResponse.redirect(new URL("/subscribe", req.url));
   }
 

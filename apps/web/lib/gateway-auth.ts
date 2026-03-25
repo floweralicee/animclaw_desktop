@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { validateApiKey, touchKeyUsage, type ValidatedKey } from "./api-keys";
+import { isSubscriptionActive } from "./subscription";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -59,7 +60,7 @@ export async function authenticateGatewayRequest(
     .eq("user_id", validated.userId)
     .single();
 
-  if (sub?.status !== "active") {
+  if (!isSubscriptionActive(sub?.status)) {
     return {
       ok: false,
       response: NextResponse.json(

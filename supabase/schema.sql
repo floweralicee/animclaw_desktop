@@ -55,6 +55,8 @@ alter default privileges in schema next_auth grant all on tables to service_role
 -- ============================================================
 -- 2. public.subscriptions — Stripe subscription tracking
 --    user_id references next_auth.users so both systems share IDs.
+--    status values: 'inactive' (default), 'trialing' (7-day free
+--    trial via Stripe), 'active' (paid), 'cancelled'.
 -- ============================================================
 
 create table if not exists public.subscriptions (

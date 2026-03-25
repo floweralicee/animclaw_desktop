@@ -32,7 +32,7 @@ export default function SubscribePage() {
       try {
         const res = await fetch("/api/billing/status");
         const data = await res.json();
-        if (data.status === "active") {
+        if (data.status === "active" || data.status === "trialing") {
           stopPolling();
           router.replace("/");
         }
@@ -108,7 +108,7 @@ export default function SubscribePage() {
             Unlock AnimClaw
           </h1>
           <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
-            Subscribe to access your AI-powered workspace
+            Start your 7-day free trial — no charge until the trial ends
           </p>
         </div>
 
@@ -222,8 +222,15 @@ export default function SubscribePage() {
                   className="w-full rounded-lg px-4 py-3 text-sm font-medium transition-all hover:opacity-90 disabled:opacity-50"
                   style={{ background: "var(--color-accent)", color: "#fff" }}
                 >
-                  {loading ? "Opening checkout..." : "Subscribe Now"}
+                  {loading ? "Opening checkout..." : "Start 7-Day Free Trial"}
                 </button>
+
+                <p
+                  className="mt-2 text-center text-xs"
+                  style={{ color: "var(--color-text-muted)" }}
+                >
+                  You won&apos;t be charged until your 7-day trial ends.
+                </p>
 
                 <button
                   onClick={() => {

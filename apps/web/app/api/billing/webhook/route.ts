@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
           user_id: userId,
           stripe_customer_id: session.customer as string,
           stripe_subscription_id: subscriptionId,
-          status: "active",
+          status: subscription.status === "trialing" ? "trialing" : "active",
           current_period_end: periodEnd
             ? new Date(periodEnd * 1000).toISOString()
             : null,
@@ -62,7 +62,12 @@ export async function POST(req: NextRequest) {
       await supabase
         .from("subscriptions")
         .update({
-          status: subscription.status === "active" ? "active" : "inactive",
+          status:
+            subscription.status === "active"
+              ? "active"
+              : subscription.status === "trialing"
+                ? "trialing"
+                : "inactive",
           ...(updatedPeriodEnd && {
             current_period_end: new Date(
               updatedPeriodEnd * 1000,

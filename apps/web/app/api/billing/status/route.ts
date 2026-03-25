@@ -22,5 +22,6 @@ export async function GET() {
   return NextResponse.json({
     status: data?.status ?? "inactive",
     currentPeriodEnd: data?.current_period_end ?? null,
+    isTrialing: data?.status === "trialing",
   });
 }
