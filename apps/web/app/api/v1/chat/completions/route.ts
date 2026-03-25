@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createGateway, streamText, generateText, type ModelMessage } from "ai";
 import { authenticateGatewayRequest } from "@/lib/gateway-auth";
 import { resolveModel } from "@/lib/gateway-models";
-import { logUsage } from "@/lib/usage";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -51,7 +50,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const { provider, modelId, pricing } = resolved;
+  const { provider, modelId } = resolved;
   const stream = body.stream !== false;
 
   try {
@@ -66,21 +65,7 @@ export async function POST(req: Request) {
         topP: body.top_p as number | undefined,
       });
 
-      const response = result.toTextStreamResponse();
-
-      result.usage.then((usage) => {
-        logUsage({
-          userId: authResult.userId,
-          apiKeyId: authResult.apiKeyId,
-          model: modelId,
-          provider,
-          promptTokens: usage.promptTokens,
-          completionTokens: usage.completionTokens,
-          pricing,
-        }).catch((err) => console.error("[gateway] usage logging failed:", err));
-      });
-
-      return response;
+      return result.toTextStreamResponse();
     }
 
     const result = await generateText({
@@ -90,16 +75,6 @@ export async function POST(req: Request) {
       maxOutputTokens: (body.max_tokens ?? body.max_completion_tokens) as number | undefined,
       topP: body.top_p as number | undefined,
     });
-
-    logUsage({
-      userId: authResult.userId,
-      apiKeyId: authResult.apiKeyId,
-      model: modelId,
-      provider,
-      promptTokens: result.usage.promptTokens,
-      completionTokens: result.usage.completionTokens,
-      pricing,
-    }).catch((err) => console.error("[gateway] usage logging failed:", err));
 
     return NextResponse.json({
       id: `chatcmpl-${crypto.randomUUID()}`,

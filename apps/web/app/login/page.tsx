@@ -32,7 +32,7 @@ export default function LoginPage() {
 
         <button
           onClick={() =>
-            signIn("google", { callbackUrl: "/dashboard/api" }, { prompt: "select_account" })
+            signIn("google", { callbackUrl: "/" }, { prompt: "select_account" })
           }
           className="flex w-full items-center justify-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-all hover:opacity-90"
           style={{

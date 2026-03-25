@@ -1,20 +1,14 @@
 import { NextResponse } from "next/server";
-import { validateApiKey, touchKeyUsage, type ValidatedKey } from "./api-keys";
-import { isSubscriptionActive } from "./subscription";
-import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+const PUBLIC_KEY = process.env.ANIMCLAW_PUBLIC_KEY ?? "";
 
 type GatewayAuthResult =
-  | { ok: true; userId: string; apiKeyId: string }
+  | { ok: true }
   | { ok: false; response: NextResponse };
 
 /**
  * Authenticate an incoming gateway request via Bearer token.
- * Validates the API key and checks the user has an active subscription.
+ * Validates against the single shared ANIMCLAW_PUBLIC_KEY env var.
  */
 export async function authenticateGatewayRequest(
   req: Request,
@@ -31,20 +25,8 @@ export async function authenticateGatewayRequest(
   }
 
   const token = authHeader.slice(7);
-  let validated: ValidatedKey | null;
-  try {
-    validated = await validateApiKey(token);
-  } catch {
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { error: { message: "Internal authentication error", type: "api_error" } },
-        { status: 500 },
-      ),
-    };
-  }
 
-  if (!validated) {
+  if (!PUBLIC_KEY || token !== PUBLIC_KEY) {
     return {
       ok: false,
       response: NextResponse.json(
@@ -54,23 +36,5 @@ export async function authenticateGatewayRequest(
     };
   }
 
-  const { data: sub } = await supabase
-    .from("subscriptions")
-    .select("status")
-    .eq("user_id", validated.userId)
-    .single();
-
-  if (!isSubscriptionActive(sub?.status)) {
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { error: { message: "Active subscription required. Subscribe at animclaw.com/subscribe", type: "invalid_request_error" } },
-        { status: 403 },
-      ),
-    };
-  }
-
-  touchKeyUsage(validated.apiKeyId);
-
-  return { ok: true, userId: validated.userId, apiKeyId: validated.apiKeyId };
+  return { ok: true };
 }
