@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
       const subscriptionId = session.subscription as string;
       const subscription =
         await stripe.subscriptions.retrieve(subscriptionId);
+      const periodEnd = subscription.items.data[0]?.current_period_end;
 
       await supabase.from("subscriptions").upsert(
         {
@@ -44,9 +45,9 @@ export async function POST(req: NextRequest) {
           stripe_customer_id: session.customer as string,
           stripe_subscription_id: subscriptionId,
           status: "active",
-          current_period_end: new Date(
-            subscription.current_period_end * 1000,
-          ).toISOString(),
+          current_period_end: periodEnd
+            ? new Date(periodEnd * 1000).toISOString()
+            : null,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "user_id" },
@@ -56,13 +57,17 @@ export async function POST(req: NextRequest) {
 
     case "customer.subscription.updated": {
       const subscription = event.data.object as Stripe.Subscription;
+      const updatedPeriodEnd =
+        subscription.items.data[0]?.current_period_end;
       await supabase
         .from("subscriptions")
         .update({
           status: subscription.status === "active" ? "active" : "inactive",
-          current_period_end: new Date(
-            subscription.current_period_end * 1000,
-          ).toISOString(),
+          ...(updatedPeriodEnd && {
+            current_period_end: new Date(
+              updatedPeriodEnd * 1000,
+            ).toISOString(),
+          }),
           updated_at: new Date().toISOString(),
         })
         .eq("stripe_subscription_id", subscription.id);
