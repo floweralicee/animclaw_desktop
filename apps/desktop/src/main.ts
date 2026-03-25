@@ -7,8 +7,9 @@ import {
   autoUpdater,
 } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import http from "node:http";
 import { loadWindowState, saveWindowState } from "./window-state";
 
@@ -256,12 +257,60 @@ function setupAutoUpdater(): void {
   });
 }
 
+function getConfigPath(): string {
+  return path.join(os.homedir(), ".openclaw-animclaw", "openclaw.json");
+}
+
+function writeGatewayConfig(apiKey: string): void {
+  const configPath = getConfigPath();
+  const configDir = path.dirname(configPath);
+
+  mkdirSync(configDir, { recursive: true });
+
+  let config: Record<string, unknown> = {};
+  try {
+    if (existsSync(configPath)) {
+      config = JSON.parse(readFileSync(configPath, "utf-8"));
+    }
+  } catch {
+    config = {};
+  }
+
+  if (!config.gateway || typeof config.gateway !== "object") {
+    config.gateway = {};
+  }
+  (config.gateway as Record<string, unknown>).apiKey = apiKey;
+  (config.gateway as Record<string, unknown>).provider = "openai-compatible";
+  (config.gateway as Record<string, unknown>).baseUrl = `${NEXT_URL}/api/v1`;
+
+  writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+  console.log("[desktop] Gateway API key auto-configured");
+}
+
+async function autoConfigureGatewayKey(): Promise<void> {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  try {
+    const result = await mainWindow.webContents.executeJavaScript(
+      `fetch('/api/user/api-key').then(r => r.ok ? r.json() : null).catch(() => null)`,
+    );
+    if (result?.apiKey) {
+      writeGatewayConfig(result.apiKey);
+    }
+  } catch (err) {
+    console.error("[desktop] Failed to auto-configure gateway key:", err);
+  }
+}
+
 app.on("open-url", (_event, url) => {
   if (url.startsWith("animclaw://auth/callback")) {
     const parsed = new URL(url);
     const redirectUrl = `${NEXT_URL}/api/auth/callback/google${parsed.search}`;
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.loadURL(redirectUrl);
+      mainWindow.webContents.once("did-finish-load", () => {
+        setTimeout(autoConfigureGatewayKey, 2000);
+      });
     }
   }
 });
@@ -292,6 +341,10 @@ app.whenReady().then(async () => {
 
   mainWindow = createWindow();
   mainWindow.loadURL(NEXT_URL);
+
+  mainWindow.webContents.once("did-finish-load", () => {
+    setTimeout(autoConfigureGatewayKey, 3000);
+  });
 
   setupAutoUpdater();
 });

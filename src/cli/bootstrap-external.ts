@@ -1908,18 +1908,24 @@ export async function bootstrapCommand(
   await ensureDefaultWorkspacePath(openclawCommand, profile, workspaceDir);
 
   // ── Animclaw AI Gateway option ──────────────────────────────────────
-  // Let the user choose between using the managed Animclaw AI Gateway
-  // (single API key, usage billed through animclaw.com) or configuring
-  // their own provider API keys directly.
+  // In desktop mode (ANIMCLAW_BUNDLED), the gateway key is auto-configured
+  // on login — skip the manual prompt entirely.
   let useAnimclawGateway = false;
-  if (!nonInteractive && !opts.json && process.stdin.isTTY) {
+  const isBundledDesktop = process.env.ANIMCLAW_BUNDLED === "1";
+
+  if (isBundledDesktop) {
+    useAnimclawGateway = true;
+    runtime.log(
+      theme.muted("Animclaw AI Gateway auto-configured by desktop app."),
+    );
+  } else if (!nonInteractive && !opts.json && process.stdin.isTTY) {
     const gatewayChoice = await select({
       message: stylePromptMessage("How would you like to connect to AI models?"),
       options: [
         {
           value: "animclaw-gateway",
           label: "Animclaw AI Gateway (recommended)",
-          hint: "One API key, usage billed through animclaw.com/dashboard/api",
+          hint: "One API key, auto-configured when you sign in",
         },
         {
           value: "own-keys",
@@ -1983,7 +1989,7 @@ export async function bootstrapCommand(
       });
 
       runtime.log(
-        theme.muted("Animclaw AI Gateway configured. Manage keys & usage at https://animclaw.com/dashboard/api"),
+        theme.muted("Animclaw AI Gateway configured."),
       );
     }
   }

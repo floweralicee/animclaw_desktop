@@ -165,7 +165,7 @@ async function downloadDuckDB() {
 
   let assetName;
   if (platform === "darwin") {
-    assetName = arch === "arm64" ? "duckdb_cli-osx-aarch64.zip" : "duckdb_cli-osx-universal.zip";
+    assetName = "duckdb_cli-osx-universal.zip";
   } else if (platform === "linux") {
     assetName = arch === "arm64" ? "duckdb_cli-linux-aarch64.zip" : "duckdb_cli-linux-amd64.zip";
   } else {

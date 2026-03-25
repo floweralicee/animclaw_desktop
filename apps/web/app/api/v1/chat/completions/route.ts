@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createGateway, streamText, generateText, type ModelMessage } from "ai";
 import { authenticateGatewayRequest } from "@/lib/gateway-auth";
 import { resolveModel } from "@/lib/gateway-models";
+import { logUsage } from "@/lib/usage";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -13,6 +14,8 @@ const gateway = createGateway({
 export async function POST(req: Request) {
   const authResult = await authenticateGatewayRequest(req);
   if (!authResult.ok) return authResult.response;
+
+  const { userId, apiKeyId } = authResult;
 
   let body: Record<string, unknown>;
   try {
@@ -50,7 +53,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const { provider, modelId } = resolved;
+  const { provider, modelId, pricing } = resolved;
   const stream = body.stream !== false;
 
   try {
@@ -63,6 +66,17 @@ export async function POST(req: Request) {
         temperature: body.temperature as number | undefined,
         maxOutputTokens: (body.max_tokens ?? body.max_completion_tokens) as number | undefined,
         topP: body.top_p as number | undefined,
+        onFinish({ usage }) {
+          logUsage({
+            userId,
+            apiKeyId,
+            model: modelId,
+            provider,
+            promptTokens: usage.inputTokens ?? 0,
+            completionTokens: usage.outputTokens ?? 0,
+            pricing,
+          }).catch((err) => console.error("[gateway] Usage logging failed:", err));
+        },
       });
 
       return result.toTextStreamResponse();
@@ -75,6 +89,19 @@ export async function POST(req: Request) {
       maxOutputTokens: (body.max_tokens ?? body.max_completion_tokens) as number | undefined,
       topP: body.top_p as number | undefined,
     });
+
+    const promptTokens = result.usage.inputTokens ?? 0;
+    const completionTokens = result.usage.outputTokens ?? 0;
+
+    logUsage({
+      userId,
+      apiKeyId,
+      model: modelId,
+      provider,
+      promptTokens,
+      completionTokens,
+      pricing,
+    }).catch((err) => console.error("[gateway] Usage logging failed:", err));
 
     return NextResponse.json({
       id: `chatcmpl-${crypto.randomUUID()}`,
@@ -89,11 +116,10 @@ export async function POST(req: Request) {
         },
       ],
       usage: {
-        prompt_tokens: result.usage.inputTokens ?? 0,
-        completion_tokens: result.usage.outputTokens ?? 0,
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
         total_tokens:
-          result.usage.totalTokens ??
-          (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
+          result.usage.totalTokens ?? promptTokens + completionTokens,
       },
     });
   } catch (err) {

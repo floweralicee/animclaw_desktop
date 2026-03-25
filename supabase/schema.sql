@@ -14,6 +14,7 @@ create table if not exists next_auth.users (
   email text unique,
   "emailVerified" timestamptz,
   image text,
+  gateway_api_key text,
   created_at timestamptz default now()
 );
 

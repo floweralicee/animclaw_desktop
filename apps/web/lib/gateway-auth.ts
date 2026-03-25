@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import crypto from "node:crypto";
 
-const PUBLIC_KEY = process.env.ANIMCLAW_PUBLIC_KEY ?? "";
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+);
 
-type GatewayAuthResult =
-  | { ok: true }
+export type GatewayAuthResult =
+  | { ok: true; userId: string; apiKeyId: string }
   | { ok: false; response: NextResponse };
 
 /**
  * Authenticate an incoming gateway request via Bearer token.
- * Validates against the single shared ANIMCLAW_PUBLIC_KEY env var.
+ * Hashes the token with SHA-256 and looks it up in public.api_keys.
  */
 export async function authenticateGatewayRequest(
   req: Request,
@@ -25,8 +30,16 @@ export async function authenticateGatewayRequest(
   }
 
   const token = authHeader.slice(7);
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
-  if (!PUBLIC_KEY || token !== PUBLIC_KEY) {
+  const { data: apiKey, error } = await supabase
+    .from("api_keys")
+    .select("id, user_id")
+    .eq("key_hash", tokenHash)
+    .is("revoked_at", null)
+    .single();
+
+  if (error || !apiKey) {
     return {
       ok: false,
       response: NextResponse.json(
@@ -36,5 +49,11 @@ export async function authenticateGatewayRequest(
     };
   }
 
-  return { ok: true };
+  supabase
+    .from("api_keys")
+    .update({ last_used_at: new Date().toISOString() })
+    .eq("id", apiKey.id)
+    .then(() => {});
+
+  return { ok: true, userId: apiKey.user_id, apiKeyId: apiKey.id };
 }
