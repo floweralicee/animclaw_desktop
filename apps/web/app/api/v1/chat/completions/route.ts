@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { streamText, generateText } from "ai";
+import { createGateway, streamText, generateText } from "ai";
 import { authenticateGatewayRequest } from "@/lib/gateway-auth";
 import { resolveModel } from "@/lib/gateway-models";
 import { logUsage } from "@/lib/usage";
@@ -9,19 +7,9 @@ import { logUsage } from "@/lib/usage";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-const openai = createOpenAI({ apiKey: process.env.GATEWAY_OPENAI_API_KEY });
-const anthropic = createAnthropic({ apiKey: process.env.GATEWAY_ANTHROPIC_API_KEY });
-
-function getProvider(provider: string, modelId: string) {
-  switch (provider) {
-    case "openai":
-      return openai(modelId);
-    case "anthropic":
-      return anthropic(modelId);
-    default:
-      throw new Error(`Unsupported provider: ${provider}`);
-  }
-}
+const gateway = createGateway({
+  apiKey: process.env.AI_GATEWAY_API_KEY ?? "",
+});
 
 export async function POST(req: Request) {
   const authResult = await authenticateGatewayRequest(req);
@@ -67,7 +55,7 @@ export async function POST(req: Request) {
   const stream = body.stream !== false;
 
   try {
-    const model = getProvider(provider, modelId);
+    const model = gateway(`${provider}/${modelId}`);
 
     if (stream) {
       const result = streamText({
