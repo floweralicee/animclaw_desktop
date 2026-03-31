@@ -3,6 +3,7 @@ import { createGateway, streamText, generateText, type ModelMessage } from "ai";
 import { authenticateGatewayRequest } from "@/lib/gateway-auth";
 import { resolveModel } from "@/lib/gateway-models";
 import { logUsage } from "@/lib/usage";
+import { checkUserCredit } from "@/lib/credits";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -16,6 +17,14 @@ export async function POST(req: Request) {
   if (!authResult.ok) return authResult.response;
 
   const { userId, apiKeyId } = authResult;
+
+  const creditCheck = await checkUserCredit(userId);
+  if (!creditCheck.allowed) {
+    return NextResponse.json(
+      { error: { message: creditCheck.reason, type: "insufficient_credits" } },
+      { status: 402 },
+    );
+  }
 
   let body: Record<string, unknown>;
   try {

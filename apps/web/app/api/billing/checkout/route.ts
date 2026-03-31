@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { stripe } from "@/lib/stripe";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+);
 
 export async function POST() {
   const session = await auth();
@@ -8,10 +14,21 @@ export async function POST() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const { data: creditGrant } = await supabase
+    .from("credit_grants")
+    .select("stripe_customer_id")
+    .eq("user_id", session.user.id)
+    .single();
+
+  const existingCustomerId = creditGrant?.stripe_customer_id ?? undefined;
+
   try {
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
+      ...(existingCustomerId
+        ? { customer: existingCustomerId }
+        : {}),
       line_items: [
         {
           price: process.env.STRIPE_PRICE_ID!,

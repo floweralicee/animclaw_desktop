@@ -156,3 +156,21 @@ create table if not exists public.usage_summaries (
 );
 
 create index if not exists idx_usage_summaries_user_period on public.usage_summaries(user_id, period_start);
+
+-- ============================================================
+-- 7. public.credit_grants — Stripe billing credit grants
+--    One row per user. Created on first sign-in.
+--    amount_cents: 500 = $5.00
+-- ============================================================
+
+create table if not exists public.credit_grants (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references next_auth.users(id) on delete cascade unique,
+  stripe_customer_id text not null,
+  stripe_credit_grant_id text unique,
+  amount_cents int not null default 500,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_credit_grants_user_id on public.credit_grants(user_id);
+create index if not exists idx_credit_grants_stripe_customer_id on public.credit_grants(stripe_customer_id);

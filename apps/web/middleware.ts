@@ -25,7 +25,13 @@ export default auth((req) => {
   }
 
   const subStatus = (session as any).subscriptionStatus;
-  if (!isSubscriptionActive(subStatus) && !pathname.startsWith("/subscribe") && !pathname.startsWith("/api/billing")) {
+  const hasFreeCredits = (session as any).hasFreeCredits === true;
+  if (
+    !isSubscriptionActive(subStatus) &&
+    !hasFreeCredits &&
+    !pathname.startsWith("/subscribe") &&
+    !pathname.startsWith("/api/billing")
+  ) {
     return NextResponse.redirect(new URL("/subscribe", req.url));
   }
 
