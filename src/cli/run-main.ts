@@ -34,7 +34,12 @@ export function shouldEnsureCliPath(argv: string[]): boolean {
   if (!primary) {
     return true;
   }
-  if (primary === "status" || primary === "health" || primary === "sessions") {
+  if (
+    primary === "status" ||
+    primary === "health" ||
+    primary === "sessions" ||
+    primary === "clean-cache"
+  ) {
     return false;
   }
   if (primary === "config" && (secondary === "get" || secondary === "unset")) {

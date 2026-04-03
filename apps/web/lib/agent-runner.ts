@@ -160,7 +160,16 @@ const SESSIONS_PATCH_RETRY_DELAY_MS = 150;
 const SESSIONS_PATCH_MAX_ATTEMPTS = 2;
 
 type AgentSubscribeSupport = "unknown" | "supported" | "unsupported";
+const AGENT_SUBSCRIBE_CACHE_TTL_MS = 5 * 60_000;
 let cachedAgentSubscribeSupport: AgentSubscribeSupport = "unknown";
+let cachedAgentSubscribeSupportAt = 0;
+
+function getCachedAgentSubscribeSupport(): AgentSubscribeSupport {
+  if (Date.now() - cachedAgentSubscribeSupportAt > AGENT_SUBSCRIBE_CACHE_TTL_MS) {
+    return "unknown";
+  }
+  return cachedAgentSubscribeSupport;
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -626,7 +635,8 @@ class GatewayProcessHandle
 					throw new Error("Missing session key for subscribe mode");
 				}
 				await this.ensureFullToolVerbose(sessionKey);
-				if (cachedAgentSubscribeSupport !== "unsupported") {
+				const subscribeSupport = getCachedAgentSubscribeSupport();
+				if (subscribeSupport !== "unsupported") {
 					const subscribeRes = await this.client.request("agent.subscribe", {
 						sessionKey,
 						afterSeq: Math.max(
@@ -637,6 +647,7 @@ class GatewayProcessHandle
 					if (!subscribeRes.ok) {
 						if (isUnknownMethodResponse(subscribeRes, "agent.subscribe")) {
 							cachedAgentSubscribeSupport = "unsupported";
+							cachedAgentSubscribeSupportAt = Date.now();
 							(this.stderr as PassThrough).write(
 								"[gateway] agent.subscribe unavailable; using passive session filter mode\n",
 							);
@@ -645,6 +656,7 @@ class GatewayProcessHandle
 						}
 					} else {
 						cachedAgentSubscribeSupport = "supported";
+						cachedAgentSubscribeSupportAt = Date.now();
 					}
 				}
 			}

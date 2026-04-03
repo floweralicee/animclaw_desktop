@@ -38,6 +38,7 @@
     "animclaw": "node animclaw.mjs",
     "build": "tsdown",
     "build:plugin-env": "node scripts/build-plugin-env.mjs",
+    "clean": "rm -rf apps/web/.next apps/web/node_modules/.cache dist node_modules/.cache .turbo",
     "check": "pnpm format:check && pnpm lint",
     "deploy": "set -a && source .env && set +a && bash scripts/deploy.sh",
     "deploy:major": "set -a && source .env && set +a && bash scripts/deploy.sh --bump major",

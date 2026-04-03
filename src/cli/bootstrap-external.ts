@@ -1,5 +1,13 @@
 import { spawn, type StdioOptions } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { confirm, isCancel, note, password, select, spinner } from "@clack/prompts";
@@ -25,7 +33,8 @@ const MAX_PORT_SCAN_ATTEMPTS = 100;
 const DEFAULT_BOOTSTRAP_ROLLOUT_STAGE = "default";
 const DEFAULT_GATEWAY_LAUNCH_AGENT_LABEL = "ai.openclaw.gateway";
 const REQUIRED_TOOLS_PROFILE = "full";
-const OPENCLAW_CLI_CHECK_CACHE_TTL_MS = 5 * 60_000;
+/** Stale install-check entries are ignored after this age (plan: 24h). */
+const OPENCLAW_CLI_CHECK_CACHE_TTL_MS = 24 * 60 * 60_000;
 const OPENCLAW_UPDATE_PROMPT_SUPPRESS_AFTER_INSTALL_MS = 5 * 60_000;
 const OPENCLAW_CLI_CHECK_CACHE_FILE = "openclaw-cli-check.json";
 const OPENCLAW_SETUP_PROGRESS_BAR_WIDTH = 16;
@@ -45,10 +54,14 @@ const VIDEO_PROVIDERS: readonly MediaApiKeyDef[] = [
   { envKey: "REPLICATE_API_TOKEN", label: "Replicate", configPath: "media.apiKeys.replicate" },
 ] as const;
 
+const MODELING_PROVIDERS: readonly MediaApiKeyDef[] = [
+  { envKey: "MESHY_API_KEY", label: "Meshy AI (Image-to-3D)", configPath: "media.apiKeys.meshy" },
+] as const;
+
 const MEDIA_API_KEYS: readonly MediaApiKeyDef[] = (() => {
   const seen = new Set<string>();
   const merged: MediaApiKeyDef[] = [];
-  for (const p of [...IMAGE_PROVIDERS, ...VIDEO_PROVIDERS]) {
+  for (const p of [...IMAGE_PROVIDERS, ...VIDEO_PROVIDERS, ...MODELING_PROVIDERS]) {
     if (!seen.has(p.envKey)) {
       seen.add(p.envKey);
       merged.push(p);
@@ -636,7 +649,7 @@ async function promptMediaGenerationKeys(params: {
 }): Promise<MediaKeyResult[]> {
   note(
     [
-      "AnimClaw uses API keys for image and video generation.",
+      "AnimClaw uses API keys for image, video, and 3D model generation.",
       "Select your preferred providers below, or skip to add them later via:",
       "  openclaw --profile animclaw config set media.apiKeys.<provider> <key>",
     ].join("\n"),
@@ -673,6 +686,22 @@ async function promptMediaGenerationKeys(params: {
 
   if (!isCancel(videoChoice) && videoChoice !== "skip") {
     const provider = VIDEO_PROVIDERS.find((p) => p.envKey === videoChoice);
+    if (provider) {
+      results.push(await persistMediaKey(params, provider, configuredKeys));
+    }
+  }
+
+  // Step 3: 3D modeling provider (for the 3D animation pipeline)
+  const modelingChoice = await select({
+    message: stylePromptMessage("Which 3D model generation provider would you like to use?"),
+    options: [
+      ...MODELING_PROVIDERS.map((p) => ({ value: p.envKey, label: p.label })),
+      { value: "skip", label: "Skip for now" },
+    ],
+  });
+
+  if (!isCancel(modelingChoice) && modelingChoice !== "skip") {
+    const provider = MODELING_PROVIDERS.find((p) => p.envKey === modelingChoice);
     if (provider) {
       results.push(await persistMediaKey(params, provider, configuredKeys));
     }
@@ -841,6 +870,23 @@ function parseJsonPayload(raw: string | undefined): Record<string, unknown> | un
 
 function resolveOpenClawCliCheckCachePath(stateDir: string): string {
   return path.join(stateDir, "cache", OPENCLAW_CLI_CHECK_CACHE_FILE);
+}
+
+/**
+ * Remove the persisted OpenClaw CLI install check cache so the next bootstrap
+ * performs a fresh probe (`animclaw clean-cache`).
+ */
+export function clearOpenClawCliCheckCache(stateDir: string): { removed: boolean; path: string } {
+  const cachePath = resolveOpenClawCliCheckCachePath(stateDir);
+  if (!existsSync(cachePath)) {
+    return { removed: false, path: cachePath };
+  }
+  try {
+    unlinkSync(cachePath);
+    return { removed: true, path: cachePath };
+  } catch {
+    return { removed: false, path: cachePath };
+  }
 }
 
 function readOpenClawCliCheckCache(stateDir: string): OpenClawCliCheckCache | undefined {
@@ -1210,7 +1256,9 @@ async function ensureOpenClawCliAvailable(params: {
       shellCommandPath,
       installedAt,
     });
-    progress.completeStage(`saved (${Math.floor(OPENCLAW_CLI_CHECK_CACHE_TTL_MS / 60_000)}m TTL)`);
+    progress.completeStage(
+      `saved (${Math.floor(OPENCLAW_CLI_CHECK_CACHE_TTL_MS / (60 * 60_000))}h TTL)`,
+    );
   } else {
     progress.fail("OpenClaw CLI check failed (cache not written).");
   }

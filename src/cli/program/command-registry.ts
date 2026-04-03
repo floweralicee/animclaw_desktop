@@ -5,6 +5,7 @@ import { registerBootstrapCommand } from "./register.bootstrap.js";
 import { registerRestartCommand } from "./register.restart.js";
 import { registerStartCommand } from "./register.start.js";
 import { registerStopCommand } from "./register.stop.js";
+import { registerCleanCacheCommand } from "./register.clean-cache.js";
 import { registerTelemetryCommand } from "./register.telemetry.js";
 import { registerUpdateCommand } from "./register.update.js";
 
@@ -61,6 +62,13 @@ const CORE_CLI_ENTRIES: CoreCliEntry[] = [
     description: "Manage anonymous telemetry",
     register: ({ program }) => {
       registerTelemetryCommand(program);
+    },
+  },
+  {
+    name: "clean-cache",
+    description: "Remove cached OpenClaw CLI install check data",
+    register: ({ program }) => {
+      registerCleanCacheCommand(program);
     },
   },
 ];

@@ -134,6 +134,8 @@ create table if not exists public.usage_logs (
   completion_tokens int not null default 0,
   total_tokens int not null default 0,
   cost_microcents bigint not null default 0,
+  tier text,
+  auto_routed boolean not null default false,
   created_at timestamptz default now()
 );
 
@@ -174,3 +176,7 @@ create table if not exists public.credit_grants (
 
 create index if not exists idx_credit_grants_user_id on public.credit_grants(user_id);
 create index if not exists idx_credit_grants_stripe_customer_id on public.credit_grants(stripe_customer_id);
+
+-- usage_logs: tier + auto_routed (idempotent for existing deployments)
+alter table public.usage_logs add column if not exists tier text;
+alter table public.usage_logs add column if not exists auto_routed boolean not null default false;
