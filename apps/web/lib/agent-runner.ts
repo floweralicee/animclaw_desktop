@@ -543,6 +543,26 @@ class GatewayWsClient {
 		});
 		this.ws = ws;
 
+		// Register message/close handlers BEFORE awaiting the open event so we
+		// never miss the gateway's unsolicited connect.challenge, which is sent
+		// immediately after the TCP handshake and could otherwise arrive in the
+		// gap between open resolving and the handler being attached.
+		ws.on("message", (data: NodeWebSocket.RawData) => {
+			const text = toMessageText(data);
+			if (text != null) {
+				this.handleMessageText(text);
+			}
+		});
+
+		ws.on("close", (code: number, reason: Buffer) => {
+			if (this.closed) {
+				return;
+			}
+			this.closed = true;
+			this.flushPending(new Error("Gateway connection closed"));
+			this.onClose(code, reason.toString("utf-8"));
+		});
+
 		await new Promise<void>((resolve, reject) => {
 			let settled = false;
 			const timer = setTimeout(() => {
@@ -573,22 +593,6 @@ class GatewayWsClient {
 
 			ws.once("open", onOpen);
 			ws.once("error", onError);
-		});
-
-		ws.on("message", (data: NodeWebSocket.RawData) => {
-			const text = toMessageText(data);
-			if (text != null) {
-				this.handleMessageText(text);
-			}
-		});
-
-		ws.on("close", (code: number, reason: Buffer) => {
-			if (this.closed) {
-				return;
-			}
-			this.closed = true;
-			this.flushPending(new Error("Gateway connection closed"));
-			this.onClose(code, reason.toString("utf-8"));
 		});
 	}
 
