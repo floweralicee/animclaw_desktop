@@ -28,7 +28,7 @@ import {
 import { seedWorkspaceFromAssets, type WorkspaceSeedResult } from "./workspace-seed.js";
 
 const DEFAULT_DENCHCLAW_PROFILE = "animclaw";
-const DENCHCLAW_GATEWAY_PORT_START = 19001;
+const DENCHCLAW_GATEWAY_PORT_START = 20001;
 const MAX_PORT_SCAN_ATTEMPTS = 100;
 const DEFAULT_BOOTSTRAP_ROLLOUT_STAGE = "default";
 const DEFAULT_GATEWAY_LAUNCH_AGENT_LABEL = "ai.openclaw.gateway";

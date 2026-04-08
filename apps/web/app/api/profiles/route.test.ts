@@ -63,7 +63,7 @@ describe("profiles API", () => {
     mockReadFile.mockImplementation((p) => {
       const s = String(p);
       if (s.includes("openclaw.json")) {
-        return JSON.stringify({ gateway: { mode: "local", port: 19001 } }) as never;
+        return JSON.stringify({ gateway: { mode: "local", port: 20001 } }) as never;
       }
       return "" as never;
     });
@@ -83,7 +83,7 @@ describe("profiles API", () => {
       name: "work",
       stateDir: STATE_DIR,
       isActive: true,
-      gateway: { mode: "local", port: 19001, url: "ws://127.0.0.1:19001" },
+      gateway: { mode: "local", port: 20001, url: "ws://127.0.0.1:20001" },
     });
   });
 
@@ -107,7 +107,7 @@ describe("profiles API", () => {
     mockExists.mockImplementation((p) => String(p).endsWith("openclaw.json"));
     mockReadFile.mockImplementation((p) => {
       if (String(p).includes("openclaw.json")) {
-        return JSON.stringify({ gateway: { mode: "local", port: 19001 } }) as never;
+        return JSON.stringify({ gateway: { mode: "local", port: 20001 } }) as never;
       }
       return "" as never;
     });
@@ -124,7 +124,7 @@ describe("profiles API", () => {
         expect.objectContaining({
           name: "default",
           workspaceDir: `${STATE_DIR}/workspace`,
-          gateway: { mode: "local", port: 19001, url: "ws://127.0.0.1:19001" },
+          gateway: { mode: "local", port: 20001, url: "ws://127.0.0.1:20001" },
         }),
       ]),
     );

@@ -1015,7 +1015,7 @@ describe("bootstrapCommand always-onboard behavior", () => {
   it("keeps preferred web port and does not probe sibling ports", async () => {
     let preferredPortChecks = 0;
     fetchBehavior = async (url: string) => {
-      if (url.includes("127.0.0.1:3100/api/profiles")) {
+      if (url.includes("127.0.0.1:4200/api/profiles")) {
         preferredPortChecks += 1;
         if (preferredPortChecks <= 2) {
           return createWebProfilesResponse({ status: 503, payload: {} });
@@ -1025,7 +1025,7 @@ describe("bootstrapCommand always-onboard behavior", () => {
           payload: { profiles: [], activeProfile: "animclaw" },
         });
       }
-      if (url.includes("127.0.0.1:3101/api/profiles")) {
+      if (url.includes("127.0.0.1:4201/api/profiles")) {
         return createWebProfilesResponse({
           status: 200,
           payload: { profiles: [{ id: "stale" }], activeProfile: "stale" },
@@ -1048,15 +1048,15 @@ describe("bootstrapCommand always-onboard behavior", () => {
       runtime,
     );
 
-    expect(summary.webUrl).toBe("http://localhost:3100");
-    expect(fetchMock.mock.calls.some((call) => String(call[0] ?? "").includes(":3101/"))).toBe(
+    expect(summary.webUrl).toBe("http://localhost:4200");
+    expect(fetchMock.mock.calls.some((call) => String(call[0] ?? "").includes(":4201/"))).toBe(
       false,
     );
   });
 
   it("accepts nullable activeProfile in /api/profiles payload (prevents first-run false-negative readiness)", async () => {
     fetchBehavior = async (url: string) => {
-      if (url.includes("127.0.0.1:3100/api/profiles")) {
+      if (url.includes("127.0.0.1:4200/api/profiles")) {
         return createWebProfilesResponse({
           status: 200,
           payload: { profiles: [], activeProfile: null },

@@ -15,7 +15,7 @@ import { loadWindowState, saveWindowState } from "./window-state";
 
 if (require("electron-squirrel-startup")) app.quit();
 
-const NEXT_PORT = 3100;
+const NEXT_PORT = 4200;
 const NEXT_URL = `http://localhost:${NEXT_PORT}`;
 const IS_DEV = !app.isPackaged;
 

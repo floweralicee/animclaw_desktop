@@ -83,6 +83,17 @@ describe("seedWorkspaceFromAssets", () => {
     expect(identityContent).toContain("AnimClaw system prompt contract");
   });
 
+  it("IDENTITY.md references 3D Animation pipeline skill", () => {
+    const packageRoot = createPackageRoot(tempDir);
+    const workspaceDir = path.join(tempDir, "workspace-3d-anim");
+
+    seedWorkspaceFromAssets({ workspaceDir, packageRoot });
+
+    const identityContent = readFileSync(path.join(workspaceDir, "IDENTITY.md"), "utf-8");
+    expect(identityContent).toContain("3D Animation pipeline contract");
+    expect(identityContent).toContain(path.join(workspaceDir, "skills", "3d-animation", "SKILL.md"));
+  });
+
   it("creates CRM object projection files on first seed", () => {
     const packageRoot = createPackageRoot(tempDir);
     const workspaceDir = path.join(tempDir, "workspace-proj");
@@ -124,13 +135,14 @@ describe("seedWorkspaceFromAssets", () => {
     expect(identityContent).not.toContain("# stale identity");
   });
 
-  it("includes skills/crm/SKILL.md in projection files list", () => {
+  it("includes managed skill SKILL.md paths in projection files list", () => {
     const packageRoot = createPackageRoot(tempDir);
     const workspaceDir = path.join(tempDir, "workspace-list");
 
     const result = seedWorkspaceFromAssets({ workspaceDir, packageRoot });
 
     expect(result.projectionFiles).toContain("skills/crm/SKILL.md");
+    expect(result.projectionFiles).toContain("skills/3d-animation/SKILL.md");
     expect(result.projectionFiles).toContain("IDENTITY.md");
   });
 });

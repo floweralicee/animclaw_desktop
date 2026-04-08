@@ -22,6 +22,10 @@ import {
 	stripContextPrefix,
 } from "@/lib/embed-url";
 import { LinkPreviewCard } from "./link-preview-card";
+import { hasGenUIComponent, getGenUIComponent } from "@/lib/generative-ui-registry";
+
+// Register all GenUI components on first import
+import "./generative-ui/index";
 
 // Lazy-load ReportCard (uses Recharts which is heavy)
 const ReportCard = dynamic(
@@ -59,7 +63,8 @@ type MessageSegment =
 	| { type: "chain"; parts: ChainPart[] }
 	| { type: "report-artifact"; config: ReportConfig }
 	| { type: "diff-artifact"; diff: string }
-	| { type: "subagent-card"; task: string; label?: string; sessionKey?: string; status: "running" | "done" | "error" };
+	| { type: "subagent-card"; task: string; label?: string; sessionKey?: string; status: "running" | "done" | "error" }
+	| { type: "generative-ui"; toolName: string; toolCallId: string; status: "running" | "done" | "error"; args?: Record<string, unknown>; result?: Record<string, unknown> };
 
 /** Map AI SDK tool state string to a simplified status */
 function toolStatus(state: string): "running" | "done" | "error" {
@@ -157,6 +162,16 @@ function groupParts(parts: UIMessage["parts"]): MessageSegment[] {
 			const label = typeof args?.label === "string" ? args.label : undefined;
 			const sessionKey = typeof out?.sessionKey === "string" ? out.sessionKey : undefined;
 			segments.push({ type: "subagent-card", task, label, sessionKey, status: toolStatus(tp.state) });
+		} else if (hasGenUIComponent(tp.toolName)) {
+			flush(true);
+			segments.push({
+				type: "generative-ui",
+				toolName: tp.toolName,
+				toolCallId: tp.toolCallId,
+				status: toolStatus(tp.state),
+				args: asRecord(tp.input),
+				result: asRecord(tp.output),
+			});
 		} else {
 			chain.push({
 				kind: "tool",
@@ -195,6 +210,19 @@ function groupParts(parts: UIMessage["parts"]): MessageSegment[] {
 				tp.state ??
 				(tp.errorText ? "error" : ("result" in tp || "output" in tp) ? "output-available" : "input-available");
 			segments.push({ type: "subagent-card", task, label, sessionKey, status: toolStatus(resolvedState) });
+		} else if (hasGenUIComponent(resolvedToolName)) {
+			flush(true);
+			const resolvedState =
+				tp.state ??
+				(tp.errorText ? "error" : ("result" in tp || "output" in tp) ? "output-available" : "input-available");
+			segments.push({
+				type: "generative-ui",
+				toolName: resolvedToolName,
+				toolCallId: tp.toolCallId,
+				status: toolStatus(resolvedState),
+				args: asRecord(tp.input) ?? asRecord(tp.args),
+				result: asRecord(tp.output) ?? asRecord(tp.result),
+			});
 		} else {
 			// Persisted tool-invocation parts have no state field but
 			// include result/output/errorText to indicate completion.
@@ -764,7 +792,9 @@ function FeedbackButtons({ messageId, sessionId }: { messageId: string; sessionI
 
 /* ─── Chat message ─── */
 
-export const ChatMessage = memo(function ChatMessage({ message, isStreaming, onSubagentClick, onFilePathClick, sessionId, userHtmlMap }: { message: UIMessage; isStreaming?: boolean; onSubagentClick?: (task: string) => void; onFilePathClick?: FilePathClickHandler; sessionId?: string | null; userHtmlMap?: Map<string, string> }) {
+export type GenUIRespondHandler = (toolCallId: string, result: Record<string, unknown>) => void;
+
+export const ChatMessage = memo(function ChatMessage({ message, isStreaming, onSubagentClick, onFilePathClick, sessionId, userHtmlMap, onGenUIRespond }: { message: UIMessage; isStreaming?: boolean; onSubagentClick?: (task: string) => void; onFilePathClick?: FilePathClickHandler; sessionId?: string | null; userHtmlMap?: Map<string, string>; onGenUIRespond?: GenUIRespondHandler }) {
 	const isUser = message.role === "user";
 	const segments = groupParts(message.parts);
 	const markdownComponents = useMemo(
@@ -983,7 +1013,33 @@ export const ChatMessage = memo(function ChatMessage({ message, isStreaming, onS
 				</motion.div>
 			);
 		}
-		if (segment.type === "subagent-card") {
+		if (segment.type === "generative-ui") {
+			const entry = getGenUIComponent(segment.toolName);
+			if (entry) {
+				const parsedArgs = entry.parseArgs(segment.args);
+				if (parsedArgs) {
+					const Component = entry.component;
+					return (
+						<motion.div
+							key={`genui-${segment.toolCallId}-${index}`}
+							initial={{ opacity: 0, y: 4 }}
+							animate={{ opacity: 1, y: 0 }}
+							transition={{ duration: 0.25, ease: "easeOut" }}
+						>
+							<Component
+								toolCallId={segment.toolCallId}
+								status={segment.status === "done" ? "done" : segment.status === "error" ? "error" : "pending"}
+								args={parsedArgs}
+								result={segment.result}
+								respond={(result) => onGenUIRespond?.(segment.toolCallId, result)}
+							/>
+						</motion.div>
+					);
+				}
+			}
+			return null;
+		}
+	if (segment.type === "subagent-card") {
 			const truncatedTask = segment.task.length > 80 ? segment.task.slice(0, 80) + "..." : segment.task;
 			const isRunning = segment.status === "running";
 			return (

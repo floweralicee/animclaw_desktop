@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import type { ComponentType } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("./workspace", () => ({
@@ -154,7 +155,7 @@ describe("agent-runner", () => {
 	describe("buildConnectParams", () => {
 		it("uses a client.id that the Gateway actually accepts (prevents connect rejection)", async () => {
 			const { buildConnectParams } = await import("./agent-runner.js");
-			const params = buildConnectParams({ url: "ws://127.0.0.1:19001" }) as {
+			const params = buildConnectParams({ url: "ws://127.0.0.1:20001" }) as {
 				client: { id: string; mode: string };
 			};
 			expect(VALID_GATEWAY_CLIENT_IDS.has(params.client.id)).toBe(true);
@@ -162,7 +163,7 @@ describe("agent-runner", () => {
 
 		it("uses a client.mode the Gateway accepts (prevents schema validation failure)", async () => {
 			const { buildConnectParams } = await import("./agent-runner.js");
-			const params = buildConnectParams({ url: "ws://127.0.0.1:19001" }) as {
+			const params = buildConnectParams({ url: "ws://127.0.0.1:20001" }) as {
 				client: { id: string; mode: string };
 			};
 			expect(VALID_GATEWAY_CLIENT_MODES.has(params.client.mode)).toBe(true);
@@ -171,7 +172,7 @@ describe("agent-runner", () => {
 		it("includes auth.token when settings have a token", async () => {
 			const { buildConnectParams } = await import("./agent-runner.js");
 			const params = buildConnectParams({
-				url: "ws://127.0.0.1:19001",
+				url: "ws://127.0.0.1:20001",
 				token: "secret-token",
 			}) as { auth?: { token?: string; password?: string } };
 			expect(params.auth?.token).toBe("secret-token");
@@ -180,7 +181,7 @@ describe("agent-runner", () => {
 		it("includes auth.password when settings have a password", async () => {
 			const { buildConnectParams } = await import("./agent-runner.js");
 			const params = buildConnectParams({
-				url: "ws://127.0.0.1:19001",
+				url: "ws://127.0.0.1:20001",
 				password: "secret-pass",
 			}) as { auth?: { token?: string; password?: string } };
 			expect(params.auth?.password).toBe("secret-pass");
@@ -188,7 +189,7 @@ describe("agent-runner", () => {
 
 		it("omits auth when no token or password is set", async () => {
 			const { buildConnectParams } = await import("./agent-runner.js");
-			const params = buildConnectParams({ url: "ws://127.0.0.1:19001" }) as {
+			const params = buildConnectParams({ url: "ws://127.0.0.1:20001" }) as {
 				auth?: unknown;
 			};
 			expect(params.auth).toBeUndefined();
@@ -196,7 +197,7 @@ describe("agent-runner", () => {
 
 		it("requests protocol version 3 (current Gateway protocol)", async () => {
 			const { buildConnectParams } = await import("./agent-runner.js");
-			const params = buildConnectParams({ url: "ws://127.0.0.1:19001" }) as {
+			const params = buildConnectParams({ url: "ws://127.0.0.1:20001" }) as {
 				minProtocol: number;
 				maxProtocol: number;
 			};
@@ -206,7 +207,7 @@ describe("agent-runner", () => {
 
 		it("uses backend mode so sessions.patch is allowed", async () => {
 			const { buildConnectParams } = await import("./agent-runner.js");
-			const params = buildConnectParams({ url: "ws://127.0.0.1:19001" }) as {
+			const params = buildConnectParams({ url: "ws://127.0.0.1:20001" }) as {
 				client: { mode: string };
 			};
 			expect(params.client.mode).toBe("backend");
@@ -214,7 +215,7 @@ describe("agent-runner", () => {
 
 		it("advertises tool-events capability for tool stream parity", async () => {
 			const { buildConnectParams } = await import("./agent-runner.js");
-			const params = buildConnectParams({ url: "ws://127.0.0.1:19001" }) as {
+			const params = buildConnectParams({ url: "ws://127.0.0.1:20001" }) as {
 				caps?: string[];
 			};
 			expect(Array.isArray(params.caps)).toBe(true);
@@ -264,11 +265,27 @@ describe("agent-runner", () => {
 			proc.kill("SIGTERM");
 		});
 
+		it("uses DENCH_API_KEY as gateway token when OPENCLAW_GATEWAY_TOKEN is unset", async () => {
+			const MockWs = installMockWsModule();
+			delete process.env.OPENCLAW_GATEWAY_TOKEN;
+			process.env.DENCH_API_KEY = "dench_from_root_env";
+
+			const { spawnAgentProcess } = await import("./agent-runner.js");
+			const proc = spawnAgentProcess("hello");
+			await waitFor(() => MockWs.instances[0]?.methods.includes("connect"));
+
+			const ws = MockWs.instances[0];
+			const connectFrame = ws.requestFrames.find((f) => f.method === "connect");
+			const params = connectFrame?.params as { auth?: { token?: string } };
+			expect(params?.auth?.token).toBe("dench_from_root_env");
+			proc.kill("SIGTERM");
+		});
+
 		it("falls back to config gateway port when env port is stale", async () => {
 			const MockWs = installMockWsModule();
 			process.env.OPENCLAW_HOME = "/tmp/__ironclaw_agent_runner_test_no_config";
-			process.env.OPENCLAW_GATEWAY_PORT = "19001";
-			MockWs.failOpenForUrls.add("ws://127.0.0.1:19001/");
+			process.env.OPENCLAW_GATEWAY_PORT = "20001";
+			MockWs.failOpenForUrls.add("ws://127.0.0.1:20001/");
 
 			const { spawnAgentProcess } = await import("./agent-runner.js");
 			const proc = spawnAgentProcess("hello");
@@ -282,7 +299,7 @@ describe("agent-runner", () => {
 			const fallbackAttempt = MockWs.instances.find(
 				(instance) => instance.constructorUrl !== primaryAttempt?.constructorUrl,
 			);
-			expect(primaryAttempt?.constructorUrl).toBe("ws://127.0.0.1:19001/");
+			expect(primaryAttempt?.constructorUrl).toBe("ws://127.0.0.1:20001/");
 			expect(fallbackAttempt).toBeDefined();
 
 			await waitFor(
@@ -607,6 +624,141 @@ describe("agent-runner", () => {
 		it("returns raw string for non-JSON body", async () => {
 			const { parseErrorBody } = await import("./agent-runner.js");
 			expect(parseErrorBody("plain text error")).toBe("plain text error");
+		});
+	});
+
+	// ── generative-ui-registry ───────────────────────────────────────
+
+	describe("generative-ui-registry", () => {
+		beforeEach(() => {
+			vi.resetModules();
+		});
+
+		it("register/has/get/getRegisteredToolNames round-trip", async () => {
+			const {
+				registerGenUIComponent,
+				hasGenUIComponent,
+				getGenUIComponent,
+				getRegisteredToolNames,
+			} = await import("./generative-ui-registry.js");
+
+			const Dummy = (() => null) as ComponentType<Record<string, unknown>>;
+			registerGenUIComponent("genui_test_tool", {
+				label: "Test",
+				component: Dummy,
+				parseArgs: (raw) => (raw?.ok === true ? { ok: true } : null),
+			});
+
+			expect(hasGenUIComponent("genui_test_tool")).toBe(true);
+			expect(hasGenUIComponent("missing")).toBe(false);
+			expect(getRegisteredToolNames()).toContain("genui_test_tool");
+
+			const entry = getGenUIComponent("genui_test_tool");
+			expect(entry?.label).toBe("Test");
+			expect(entry?.parseArgs({ ok: true })).toEqual({ ok: true });
+			expect(entry?.parseArgs({ ok: false })).toBeNull();
+		});
+	});
+
+	// ── mcp-adapter ──────────────────────────────────────────────────
+
+	describe("mcp-adapter", () => {
+		beforeEach(() => {
+			vi.resetModules();
+		});
+
+		it("template exports have expected ids and genUITool links", async () => {
+			const {
+				veoAdapterTemplate,
+				falAdapterTemplate,
+				stabilityAdapterTemplate,
+				audioAdapterTemplate,
+			} = await import("./mcp-adapter.js");
+
+			expect(veoAdapterTemplate.id).toBe("google-veo");
+			expect(veoAdapterTemplate.tools[0]?.name).toBe("generate_video_veo");
+			expect(veoAdapterTemplate.tools[0]?.genUITool).toBe("video_preview");
+
+			expect(falAdapterTemplate.id).toBe("fal-ai");
+			expect(falAdapterTemplate.tools[0]?.genUITool).toBe("image_picker");
+
+			expect(stabilityAdapterTemplate.id).toBe("stability-ai");
+			expect(stabilityAdapterTemplate.tools[0]?.genUITool).toBe("image_picker");
+
+			expect(audioAdapterTemplate.tools.every((t) => t.genUITool === undefined)).toBe(true);
+		});
+
+		it("registry CRUD: register/get/getAll/getAllMCPTools", async () => {
+			const {
+				registerMCPAdapter,
+				getMCPAdapter,
+				getAllMCPAdapters,
+				getConfiguredAdapters,
+				getAllMCPTools,
+			} = await import("./mcp-adapter.js");
+
+			const execute = vi.fn(async () => ({ success: true as const }));
+			registerMCPAdapter({
+				id: "unit-test-adapter",
+				name: "Unit Test",
+				description: "test",
+				tools: [
+					{
+						name: "do_thing",
+						description: "does a thing",
+						parameters: [{ name: "x", type: "string", description: "x" }],
+					},
+				],
+				execute,
+				isConfigured: () => true,
+			});
+
+			expect(getMCPAdapter("unit-test-adapter")?.name).toBe("Unit Test");
+			expect(getAllMCPAdapters().map((a) => a.id)).toContain("unit-test-adapter");
+			expect(getConfiguredAdapters().map((a) => a.id)).toContain("unit-test-adapter");
+			expect(getAllMCPTools().map((t) => t.name)).toContain("do_thing");
+		});
+
+		it("getConfiguredAdapters excludes unconfigured adapters", async () => {
+			const { registerMCPAdapter, getConfiguredAdapters } = await import("./mcp-adapter.js");
+
+			registerMCPAdapter({
+				id: "off",
+				name: "Off",
+				description: "off",
+				tools: [],
+				execute: vi.fn(),
+				isConfigured: () => false,
+			});
+
+			expect(getConfiguredAdapters()).toEqual([]);
+		});
+	});
+
+	// ── generative-ui registration wiring (parseArgs) ─────────────────
+
+	describe("generative-ui registration wiring", () => {
+		beforeEach(() => {
+			vi.resetModules();
+		});
+
+		it("image_picker parseArgs accepts string URLs and objects with url", async () => {
+			await import("../app/components/generative-ui/index.js");
+			const { getGenUIComponent } = await import("./generative-ui-registry.js");
+			const entry = getGenUIComponent("image_picker");
+			expect(entry).toBeDefined();
+			const parsed = entry?.parseArgs({
+				images: ["https://a.example/x.png", { url: "https://b.example/y.png", label: "B" }],
+			});
+			expect(parsed?.images).toHaveLength(2);
+			expect(parsed?.images[0]?.url).toBe("https://a.example/x.png");
+			expect(parsed?.images[1]?.label).toBe("B");
+		});
+
+		it("image_picker parseArgs returns null without images", async () => {
+			await import("../app/components/generative-ui/index.js");
+			const { getGenUIComponent } = await import("./generative-ui-registry.js");
+			expect(getGenUIComponent("image_picker")?.parseArgs({})).toBeNull();
 		});
 	});
 });

@@ -187,6 +187,7 @@ export function buildDenchClawIdentity(workspaceDir: string): string {
   const browserSkillPath = path.join(workspaceDir, "skills", "browser", "SKILL.md");
   const appBuilderSkillPath = path.join(workspaceDir, "skills", "app-builder", "SKILL.md");
   const productionSkillPath = path.join(workspaceDir, "skills", "production", "SKILL.md");
+  const animationSkillPath = path.join(workspaceDir, "skills", "3d-animation", "SKILL.md");
   return `# IDENTITY.md - AnimClaw
 
 You are **AnimClaw** - a personal AI agent and a CRM Database System built by AnimClaw (animclaw.com), running on top of [OpenClaw](https://github.com/openclaw/openclaw).
@@ -253,6 +254,16 @@ Your production workflow behavior is defined by the Production skill at:
 - All generated assets are saved under \`${workspaceDir}/production/\` organized by scene and shot.
 - A generation log at \`${workspaceDir}/production/generation-log.md\` is kept updated with every generation.
 
+## 3D Animation pipeline contract
+
+Your 3D animation pipeline behavior is defined by the 3D Animation skill at:
+\`${animationSkillPath}\`
+
+- Load and follow that skill when the user asks to create 3D characters, generate 3D models, rig characters, or animate models.
+- This skill is on-demand — only load it when the user's request involves 3D animation.
+- The pipeline covers: T-pose reference art (Nano Banana) → 3D model (Meshy AI) → auto-rigging (Mixamo / AccuRig / Rigify) → Blender animation.
+- All 3D assets are saved under \`${workspaceDir}/production/3d-models/\`.
+
 ## What you do
 
 - Find and enrich leads, maintain CRM pipelines, and help run outreach workflows.
@@ -262,6 +273,7 @@ Your production workflow behavior is defined by the Production skill at:
 - Generate images and videos for shots directly in AnimClaw chat using Nano Banana and Veo 3.1.
 - Track generation progress in a live-updated markdown log opened in the sidebar.
 - Organize all production assets by scene and shot under production/.
+- Create animated 3D characters from text descriptions through the full pipeline: concept art → 3D model → rigging → animation.
 
 ## Links
 
@@ -332,6 +344,7 @@ export const MANAGED_SKILLS: ReadonlyArray<{ name: string; templatePaths?: boole
   { name: "browser" },
   { name: "app-builder", templatePaths: true },
   { name: "production", templatePaths: true },
+  { name: "3d-animation", templatePaths: true },
 ];
 
 export function seedSkill(

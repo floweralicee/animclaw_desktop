@@ -192,6 +192,161 @@ describe("Chat API routes", () => {
     });
   });
 
+  // ─── POST /api/chat/tool-response ───────────────────────────────
+
+  describe("POST /api/chat/tool-response", () => {
+    async function postToolResponse(body: Record<string, unknown>) {
+      const { POST } = await import("./tool-response/route.js");
+      return POST(
+        new Request("http://localhost/api/chat/tool-response", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+      );
+    }
+
+    it("returns 400 when required fields are missing", async () => {
+      const res = await postToolResponse({
+        sessionId: "s1",
+        toolCallId: "tc1",
+        toolName: "image_picker",
+      });
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toMatch(/Missing required fields/);
+    });
+
+    it("returns ok and formats image_picker message", async () => {
+      const { getActiveRun } = await import("@/lib/active-runs");
+      vi.mocked(getActiveRun).mockReturnValue(undefined);
+
+      const res = await postToolResponse({
+        sessionId: "s1",
+        toolCallId: "tc1",
+        toolName: "image_picker",
+        result: { selectedIndex: 0, selectedLabel: "Hero", selectedPath: "/ws/shot.png" },
+      });
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.ok).toBe(true);
+      expect(json.toolCallId).toBe("tc1");
+      expect(json.userMessage).toContain("image 1");
+      expect(json.userMessage).toContain("Hero");
+      expect(json.userMessage).toContain("/ws/shot.png");
+    });
+
+    it("formats video_preview regenerate and approval", async () => {
+      const { getActiveRun } = await import("@/lib/active-runs");
+      vi.mocked(getActiveRun).mockReturnValue(undefined);
+
+      const regen = await postToolResponse({
+        sessionId: "s1",
+        toolCallId: "tc2",
+        toolName: "video_preview",
+        result: { action: "regenerate" },
+      });
+      expect((await regen.json()).userMessage).toBe("Please regenerate the video.");
+
+      const approve = await postToolResponse({
+        sessionId: "s1",
+        toolCallId: "tc3",
+        toolName: "video_preview",
+        result: { approvedIndex: 2 },
+      });
+      expect((await approve.json()).userMessage).toBe("Video 3 looks good — approved.");
+    });
+
+    it("formats shot_list_editor, script_editor, storyboard_editor, widget_renderer", async () => {
+      const { getActiveRun } = await import("@/lib/active-runs");
+      vi.mocked(getActiveRun).mockReturnValue(undefined);
+
+      const shot = await postToolResponse({
+        sessionId: "s1",
+        toolCallId: "a",
+        toolName: "shot_list_editor",
+        result: { rows: [{}, {}] },
+      });
+      expect((await shot.json()).userMessage).toBe("Shot list confirmed with 2 shots.");
+
+      const script = await postToolResponse({
+        sessionId: "s1",
+        toolCallId: "b",
+        toolName: "script_editor",
+        result: { filePath: "/act1.md" },
+      });
+      expect((await script.json()).userMessage).toBe("Script confirmed — save to /act1.md.");
+
+      const story = await postToolResponse({
+        sessionId: "s1",
+        toolCallId: "c",
+        toolName: "storyboard_editor",
+        result: { order: ["p1", "p2"] },
+      });
+      expect((await story.json()).userMessage).toBe("Storyboard confirmed with 2 panels.");
+
+      const widget = await postToolResponse({
+        sessionId: "s1",
+        toolCallId: "d",
+        toolName: "widget_renderer",
+        result: { prompt: "Custom copy" },
+      });
+      expect((await widget.json()).userMessage).toBe("Custom copy");
+
+      const widgetDefault = await postToolResponse({
+        sessionId: "s1",
+        toolCallId: "e",
+        toolName: "widget_renderer",
+        result: {},
+      });
+      expect((await widgetDefault.json()).userMessage).toBe("Widget interaction confirmed.");
+    });
+
+    it("uses fallback message for unknown toolName", async () => {
+      const { getActiveRun } = await import("@/lib/active-runs");
+      vi.mocked(getActiveRun).mockReturnValue(undefined);
+
+      const res = await postToolResponse({
+        sessionId: "s1",
+        toolCallId: "tcX",
+        toolName: "unknown_tool_xyz",
+        result: { x: 1 },
+      });
+      expect(res.status).toBe(200);
+      expect((await res.json()).userMessage).toBe("Confirmed selection for unknown_tool_xyz.");
+    });
+
+    it("writes result onto matching tool-invocation part when run is active", async () => {
+      const { getActiveRun } = await import("@/lib/active-runs");
+      const toolPart = {
+        type: "tool-invocation" as const,
+        toolCallId: "match-me",
+        toolName: "image_picker",
+        args: {},
+      };
+      const run = {
+        accumulated: {
+          parts: [toolPart],
+        },
+      };
+      vi.mocked(getActiveRun).mockReturnValue(run as never);
+
+      const payload = { picked: true };
+      const res = await postToolResponse({
+        sessionId: "sess1",
+        toolCallId: "match-me",
+        toolName: "image_picker",
+        result: payload,
+      });
+      expect(res.status).toBe(200);
+      expect(toolPart).toMatchObject({
+        type: "tool-invocation",
+        toolCallId: "match-me",
+        result: payload,
+      });
+    });
+  });
+
   // ─── POST /api/chat/stop ────────────────────────────────────────
 
   describe("POST /api/chat/stop", () => {

@@ -29,7 +29,7 @@
 
 ## What is Animclaw?
 
-Animclaw is a local-first AI film production tool. Describe what you need in plain English — Animclaw acts as your entire crew: director, writer, producer, line producer, storyboard artist, and VFX artist. One command launches everything at `localhost:3100`.
+Animclaw is a local-first AI film production tool. Describe what you need in plain English — Animclaw acts as your entire crew: director, writer, producer, line producer, storyboard artist, and VFX artist. One command launches everything at `localhost:4200`.
 
 ```bash
 npx animclaw
@@ -91,7 +91,7 @@ Based on *"Prompt-Level Controls for Prosody-Aligned Facial Performance"* (Chen,
 npx animclaw
 ```
 
-Opens at `localhost:3100` after completing onboarding wizard.
+Opens at `localhost:4200` after completing onboarding wizard.
 
 ---
 
@@ -108,8 +108,8 @@ npx animclaw stop     # stops animclaw web server
 openclaw --profile animclaw <any openclaw command>
 openclaw --profile animclaw gateway restart
 
-openclaw --profile animclaw config set gateway.port 19001
-openclaw --profile animclaw gateway install --force --port 19001
+openclaw --profile animclaw config set gateway.port 20001
+openclaw --profile animclaw gateway install --force --port 20001
 openclaw --profile animclaw gateway restart
 openclaw --profile animclaw uninstall
 ```

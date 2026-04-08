@@ -124,12 +124,12 @@ describe("parseWorkspaceLink", () => {
   });
 
   it("parses entry link from full URL", () => {
-    const result = parseWorkspaceLink("http://localhost:3100/?entry=deals:xyz");
+    const result = parseWorkspaceLink("http://localhost:4200/?entry=deals:xyz");
     expect(result).toEqual({ kind: "entry", objectName: "deals", entryId: "xyz" });
   });
 
   it("parses file link from full URL", () => {
-    const result = parseWorkspaceLink("http://localhost:3100/?path=readme.md");
+    const result = parseWorkspaceLink("http://localhost:4200/?path=readme.md");
     expect(result).toEqual({ kind: "file", path: "readme.md" });
   });
 

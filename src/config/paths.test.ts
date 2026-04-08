@@ -8,7 +8,7 @@ import {
 describe("resolveGatewayPort", () => {
   it("returns AnimClaw port when profile is animclaw and no config/env override (prevents OpenClaw port hijack)", () => {
     const port = resolveGatewayPort(undefined, { OPENCLAW_PROFILE: "animclaw" });
-    expect(port).toBe(19001);
+    expect(port).toBe(20001);
     expect(port).not.toBe(DEFAULT_GATEWAY_PORT);
   });
 
@@ -80,7 +80,7 @@ describe("resolveGatewayPort", () => {
 describe("port constants", () => {
   it("AnimClaw default port is distinct from OpenClaw default (prevents port collision)", () => {
     expect(DENCHCLAW_DEFAULT_GATEWAY_PORT).not.toBe(DEFAULT_GATEWAY_PORT);
-    expect(DENCHCLAW_DEFAULT_GATEWAY_PORT).toBe(19001);
+    expect(DENCHCLAW_DEFAULT_GATEWAY_PORT).toBe(20001);
     expect(DEFAULT_GATEWAY_PORT).toBe(18789);
   });
 });

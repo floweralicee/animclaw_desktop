@@ -7,7 +7,7 @@ import { LinkPreviewCard } from "./link-preview-card";
 
 type Artifact = {
 	id: string;
-	kind: "image" | "html" | "svg" | "code" | "video-link" | "text" | "link";
+	kind: "image" | "html" | "svg" | "code" | "video-link" | "video-file" | "text" | "link";
 	label: string;
 	content: string;
 	lang?: string;
@@ -114,6 +114,95 @@ function extractArtifacts(messages: UIMessage[]): Artifact[] {
 						content: imgMatch[2],
 					});
 				}
+			}
+		}
+	}
+
+	return artifacts;
+}
+
+/**
+ * Extract generated image/video assets from GenUI tool invocations in the
+ * assistant's message history. These are the outputs of `image_picker` and
+ * `video_preview` tool calls — shown on the whiteboard as a passive archive
+ * so users can reference them without scrolling back through chat.
+ *
+ * De-duplicates by toolCallId + item index so re-renders don't create dupes.
+ */
+function extractGenUIAssets(messages: UIMessage[]): Artifact[] {
+	const artifacts: Artifact[] = [];
+	const seen = new Set<string>();
+
+	for (const message of messages) {
+		if (message.role !== "assistant") continue;
+
+		for (const part of message.parts) {
+			const tp = part as Record<string, unknown>;
+			const toolName = (tp.toolName ?? tp.title ?? tp.tool_name) as string | undefined;
+			if (!toolName) continue;
+
+			const rawArgs = (tp.input ?? tp.args) as Record<string, unknown> | undefined;
+			const rawResult = (tp.output ?? tp.result) as Record<string, unknown> | undefined;
+			const toolCallId = (tp.toolCallId ?? tp.tool_call_id) as string | undefined;
+
+			if (toolName === "image_picker" && rawArgs) {
+				const images = Array.isArray(rawArgs.images) ? rawArgs.images as Array<{ url?: string; path?: string; label?: string }> : [];
+				const model = typeof rawArgs.model === "string" ? rawArgs.model : undefined;
+				const sceneNum = rawArgs.sceneNumber ?? rawArgs.scene_number;
+				const shotNum = rawArgs.shotNumber ?? rawArgs.shot_number;
+				const labelPrefix = [
+					sceneNum ? `Sc.${sceneNum}` : "",
+					shotNum ? `Sh.${shotNum}` : "",
+				].filter(Boolean).join(" ");
+				images.forEach((img, i) => {
+					const src = img.path ?? img.url ?? "";
+					if (!src) return;
+					const key = `image_picker:${toolCallId ?? ""}:${i}`;
+					if (seen.has(key)) return;
+					seen.add(key);
+					const label = [
+						labelPrefix,
+						img.label ?? `Image ${i + 1}`,
+						model ? `(${model})` : "",
+					].filter(Boolean).join(" ");
+					artifacts.push({
+						id: `genui-img-${toolCallId ?? ""}-${i}`,
+						kind: "image",
+						label: label || `Generated Image ${i + 1}`,
+						content: resolveMediaSrc(src),
+					});
+				});
+				// If there's a confirmed selection, mark it somehow via result
+				void rawResult; // used in chat for HITL; whiteboard shows all options
+			}
+
+			if (toolName === "video_preview" && rawArgs) {
+				const videos = Array.isArray(rawArgs.videos) ? rawArgs.videos as Array<{ url?: string; path?: string; label?: string }> : [];
+				const model = typeof rawArgs.model === "string" ? rawArgs.model : undefined;
+				const sceneNum = rawArgs.sceneNumber ?? rawArgs.scene_number;
+				const shotNum = rawArgs.shotNumber ?? rawArgs.shot_number;
+				const labelPrefix = [
+					sceneNum ? `Sc.${sceneNum}` : "",
+					shotNum ? `Sh.${shotNum}` : "",
+				].filter(Boolean).join(" ");
+				videos.forEach((vid, i) => {
+					const src = vid.path ?? vid.url ?? "";
+					if (!src) return;
+					const key = `video_preview:${toolCallId ?? ""}:${i}`;
+					if (seen.has(key)) return;
+					seen.add(key);
+					const label = [
+						labelPrefix,
+						vid.label ?? `Video ${i + 1}`,
+						model ? `(${model})` : "",
+					].filter(Boolean).join(" ");
+					artifacts.push({
+						id: `genui-vid-${toolCallId ?? ""}-${i}`,
+						kind: "video-file",
+						label: label || `Generated Video ${i + 1}`,
+						content: resolveMediaSrc(src),
+					});
+				});
 			}
 		}
 	}
@@ -260,6 +349,34 @@ function VideoLinkCard({ artifact }: { artifact: Artifact }) {
 	);
 }
 
+function resolveMediaSrc(url: string): string {
+	if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:") || url.startsWith("blob:")) {
+		return url;
+	}
+	return `/api/workspace/raw-file?path=${encodeURIComponent(url)}`;
+}
+
+function VideoFileCard({ artifact }: { artifact: Artifact }) {
+	return (
+		<div className="whiteboard-card">
+			<div className="whiteboard-card-header">
+				<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-60 shrink-0">
+					<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" />
+					<rect x="2" y="6" width="14" height="12" rx="2" />
+				</svg>
+				<span className="whiteboard-card-label">{artifact.label}</span>
+			</div>
+			<video
+				src={resolveMediaSrc(artifact.content)}
+				controls
+				className="w-full"
+				style={{ aspectRatio: "16/9", objectFit: "contain", background: "#000", display: "block" }}
+				preload="metadata"
+			/>
+		</div>
+	);
+}
+
 function ArtifactCard({ artifact, onImageDoubleClick }: { artifact: Artifact; onImageDoubleClick?: () => void }) {
 	switch (artifact.kind) {
 		case "html": return <HtmlCard artifact={artifact} />;
@@ -269,6 +386,7 @@ function ArtifactCard({ artifact, onImageDoubleClick }: { artifact: Artifact; on
 		case "text": return <TextCard artifact={artifact} />;
 		case "link": return <GenericLinkCard artifact={artifact} />;
 		case "video-link": return <VideoLinkCard artifact={artifact} />;
+		case "video-file": return <VideoFileCard artifact={artifact} />;
 	}
 }
 
@@ -303,6 +421,7 @@ function simpleHash(s: string): string {
 function whiteboardItemKey(a: Artifact): string {
 	if (a.manualId) return `manual:${a.manualId}`;
 	if (a.kind === "video-link") return `v:${a.content}`;
+	if (a.kind === "video-file") return `vf:${a.id}`;
 	return `${a.kind}|${a.label}|${a.content.length}|${simpleHash(a.content)}`;
 }
 
@@ -599,7 +718,8 @@ export function Whiteboard({ messages, externalImages, onImageDoubleClick, works
 	const derivedArtifacts = useMemo(() => {
 		const userVideos = extractUserVideoLinks(messages);
 		const fromAssistant = extractArtifacts(messages);
-		return [...userVideos, ...fromAssistant];
+		const fromGenUI = extractGenUIAssets(messages);
+		return [...userVideos, ...fromAssistant, ...fromGenUI];
 	}, [messages]);
 
 	const artifacts = useMemo(

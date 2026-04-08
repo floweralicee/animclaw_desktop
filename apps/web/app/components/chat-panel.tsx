@@ -15,7 +15,7 @@ import { motion, LayoutGroup } from "framer-motion";
 import {
 	Zap, Workflow, Award, Camera, Clapperboard,
 } from "lucide-react";
-import { ChatMessage } from "./chat-message";
+import { ChatMessage, type GenUIRespondHandler } from "./chat-message";
 import {
 	FilePickerModal,
 	type SelectedFile,
@@ -933,6 +933,66 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 				}
 			};
 		}, [status, stop]);
+
+		// GenUI HITL respond handler: record the tool response and send
+		// a follow-up user message so the agent can continue.
+		const handleGenUIRespond: GenUIRespondHandler = useCallback(
+			async (toolCallId: string, result: Record<string, unknown>) => {
+				if (!currentSessionId) return;
+
+				// Find the tool name from the latest messages
+				let toolName = "unknown";
+				for (const msg of messages) {
+					for (const part of msg.parts) {
+						const tp = part as Record<string, unknown>;
+						if (
+							(tp.toolCallId === toolCallId || tp.tool_call_id === toolCallId) &&
+							typeof (tp.toolName ?? tp.title ?? tp.tool_name) === "string"
+						) {
+							toolName = (tp.toolName ?? tp.title ?? tp.tool_name) as string;
+							break;
+						}
+					}
+				}
+
+				// Sync selected images to whiteboard
+				if (toolName === "image_picker" && typeof result.selectedPath === "string") {
+					const imgUrl = (result.selectedPath as string).startsWith("http")
+						? result.selectedPath as string
+						: `/api/workspace/raw-file?path=${encodeURIComponent(result.selectedPath as string)}`;
+					onImageAttached?.(
+						`genui-${toolCallId}`,
+						imgUrl,
+						typeof result.selectedLabel === "string"
+							? result.selectedLabel as string
+							: `Selected image`,
+					);
+				}
+
+				try {
+					const res = await fetch("/api/chat/tool-response", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							sessionId: currentSessionId,
+							toolCallId,
+							toolName,
+							result,
+						}),
+					});
+					if (res.ok) {
+						const data = await res.json();
+						if (data.userMessage && !isStreaming) {
+							userScrolledAwayRef.current = false;
+							void sendMessage({ text: data.userMessage });
+						}
+					}
+				} catch (err) {
+					console.error("GenUI tool-response failed:", err);
+				}
+			},
+			[currentSessionId, messages, isStreaming, sendMessage, onImageAttached],
+		);
 
 		// Auto-scroll to bottom on new messages, but only when the user
 		// is already near the bottom.  If the user scrolls up during
@@ -2528,6 +2588,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 								onFilePathClick={onFilePathClick}
 								sessionId={currentSessionId}
 								userHtmlMap={userHtmlMapRef.current}
+								onGenUIRespond={handleGenUIRespond}
 							/>
 						))}
 						{showInlineSpinner && (

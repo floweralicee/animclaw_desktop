@@ -41,8 +41,8 @@ export async function POST() {
       subscription_data: {
         trial_period_days: 7,
       },
-      success_url: `${process.env.NEXTAUTH_URL ?? "http://localhost:3100"}/checkout/complete?status=success`,
-      cancel_url: `${process.env.NEXTAUTH_URL ?? "http://localhost:3100"}/checkout/complete?status=cancelled`,
+      success_url: `${process.env.NEXTAUTH_URL ?? "http://localhost:4200"}/checkout/complete?status=success`,
+      cancel_url: `${process.env.NEXTAUTH_URL ?? "http://localhost:4200"}/checkout/complete?status=cancelled`,
       metadata: {
         userId: session.user.id,
       },

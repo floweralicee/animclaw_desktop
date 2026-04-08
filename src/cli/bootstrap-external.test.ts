@@ -69,10 +69,10 @@ describe("bootstrap-external diagnostics", () => {
     profile: "animclaw",
     openClawCliAvailable: true,
     openClawVersion: "2026.3.1",
-    gatewayPort: 19001,
-    gatewayUrl: "ws://127.0.0.1:19001",
+    gatewayPort: 20001,
+    gatewayUrl: "ws://127.0.0.1:20001",
     gatewayProbe: { ok: true as const },
-    webPort: 3100,
+    webPort: 4200,
     webReachable: true,
     rolloutStage: "default" as const,
     legacyFallbackEnabled: false,
@@ -329,19 +329,19 @@ describe("readExistingGatewayPort", () => {
   });
 
   it("reads numeric port from openclaw.json (normal config path)", () => {
-    writeConfig(stateDir, { gateway: { port: 19001 } });
-    expect(readExistingGatewayPort(stateDir)).toBe(19001);
+    writeConfig(stateDir, { gateway: { port: 20001 } });
+    expect(readExistingGatewayPort(stateDir)).toBe(20001);
   });
 
   it("falls back to config.json when openclaw.json is absent (legacy config support)", () => {
-    writeFileSync(path.join(stateDir, "config.json"), JSON.stringify({ gateway: { port: 19005 } }));
-    expect(readExistingGatewayPort(stateDir)).toBe(19005);
+    writeFileSync(path.join(stateDir, "config.json"), JSON.stringify({ gateway: { port: 20005 } }));
+    expect(readExistingGatewayPort(stateDir)).toBe(20005);
   });
 
   it("prefers openclaw.json over config.json when both exist (config precedence)", () => {
-    writeConfig(stateDir, { gateway: { port: 19001 } });
-    writeFileSync(path.join(stateDir, "config.json"), JSON.stringify({ gateway: { port: 19099 } }));
-    expect(readExistingGatewayPort(stateDir)).toBe(19001);
+    writeConfig(stateDir, { gateway: { port: 20001 } });
+    writeFileSync(path.join(stateDir, "config.json"), JSON.stringify({ gateway: { port: 20099 } }));
+    expect(readExistingGatewayPort(stateDir)).toBe(20001);
   });
 
   it("returns undefined when no config files exist (fresh install)", () => {
@@ -354,8 +354,8 @@ describe("readExistingGatewayPort", () => {
   });
 
   it("parses string port values (handles config.set serialization)", () => {
-    writeConfig(stateDir, { gateway: { port: "19001" } });
-    expect(readExistingGatewayPort(stateDir)).toBe(19001);
+    writeConfig(stateDir, { gateway: { port: "20001" } });
+    expect(readExistingGatewayPort(stateDir)).toBe(20001);
   });
 
   it("rejects zero and negative ports (invalid port values)", () => {
@@ -393,9 +393,9 @@ describe("isPersistedPortAcceptable", () => {
   });
 
   it("accepts AnimClaw's own port range (normal operation)", () => {
-    expect(isPersistedPortAcceptable(19001)).toBe(true);
-    expect(isPersistedPortAcceptable(19002)).toBe(true);
-    expect(isPersistedPortAcceptable(19100)).toBe(true);
+    expect(isPersistedPortAcceptable(20001)).toBe(true);
+    expect(isPersistedPortAcceptable(20002)).toBe(true);
+    expect(isPersistedPortAcceptable(20100)).toBe(true);
   });
 
   it("rejects undefined (no persisted port to reuse)", () => {
@@ -414,10 +414,10 @@ describe("isPersistedPortAcceptable", () => {
     expect(isPersistedPortAcceptable(port)).toBe(false);
   });
 
-  it("accepts valid 19001 from config (end-to-end: read + guard allows AnimClaw port)", () => {
-    writeConfig(stateDir, { gateway: { port: 19001 } });
+  it("accepts valid 20001 from config (end-to-end: read + guard allows AnimClaw port)", () => {
+    writeConfig(stateDir, { gateway: { port: 20001 } });
     const port = readExistingGatewayPort(stateDir);
-    expect(port).toBe(19001);
+    expect(port).toBe(20001);
     expect(isPersistedPortAcceptable(port)).toBe(true);
   });
 });

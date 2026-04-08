@@ -236,7 +236,10 @@ function readGatewayConfigFromStateDir(
 
 function resolveGatewayConnectionCandidates(): GatewayConnectionSettings[] {
 	const envUrl = process.env.OPENCLAW_GATEWAY_URL?.trim();
-	const envToken = process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
+	// Local monorepo dev: root `.env` often carries `DENCH_API_KEY` only; use it as gateway auth.
+	const envToken =
+		process.env.OPENCLAW_GATEWAY_TOKEN?.trim() ||
+		process.env.DENCH_API_KEY?.trim();
 	const envPassword = process.env.OPENCLAW_GATEWAY_PASSWORD?.trim();
 	const envPort = parsePort(process.env.OPENCLAW_GATEWAY_PORT);
 
@@ -278,8 +281,8 @@ function resolveGatewayConnectionCandidates(): GatewayConnectionSettings[] {
 		: `ws://127.0.0.1:${configGatewayPort}`;
 	const fallback: GatewayConnectionSettings = {
 		url: normalizeWsUrl(configRawUrl, configGatewayPort),
-		token: configToken,
-		password: configPassword,
+		token: envToken || configToken,
+		password: envPassword || configPassword,
 	};
 
 	const candidates = [primary];

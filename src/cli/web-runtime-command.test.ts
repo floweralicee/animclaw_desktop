@@ -23,22 +23,22 @@ const workspaceSeedMocks = vi.hoisted(() => ({
 
 const spawnMock = vi.hoisted(() => vi.fn());
 const webRuntimeMocks = vi.hoisted(() => ({
-  DEFAULT_WEB_APP_PORT: 3100,
+  DEFAULT_WEB_APP_PORT: 4200,
   ensureManagedWebRuntime: vi.fn(async () => ({ ready: true, reason: "ready" })),
   evaluateMajorVersionTransition: vi.fn(() => ({
     previousMajor: 2,
     currentMajor: 2,
     isMajorTransition: false,
   })),
-  readLastKnownWebPort: vi.fn(() => 3100),
+  readLastKnownWebPort: vi.fn(() => 4200),
   readManagedWebRuntimeManifest: vi.fn(() => ({
     schemaVersion: 1,
     deployedDenchVersion: "2.1.0",
     deployedAt: "2026-01-01T00:00:00.000Z",
     sourceStandaloneServer: "/tmp/server.js",
-    lastPort: 3100,
-    lastGatewayPort: 19001,
-  })),
+      lastPort: 4200,
+      lastGatewayPort: 20001,
+    })),
   resolveCliPackageRoot: vi.fn(() => "/tmp/pkg"),
   resolveManagedWebRuntimeServerPath: vi.fn(
     () => "/tmp/.openclaw-animclaw/web-runtime/app/server.js",
@@ -51,11 +51,11 @@ const webRuntimeMocks = vi.hoisted(() => ({
     pid: 7788,
     runtimeServerPath: "/tmp/.openclaw-animclaw/web-runtime/app/server.js",
   })),
-  stopManagedWebRuntime: vi.fn(async () => ({
-    port: 3100,
-    stoppedPids: [1234],
-    skippedForeignPids: [],
-  })),
+    stopManagedWebRuntime: vi.fn(async () => ({
+      port: 4200,
+      stoppedPids: [1234],
+      skippedForeignPids: [],
+    })),
   waitForWebRuntime: vi.fn(async () => ({ ok: true, reason: "profiles payload shape is valid" })),
 }));
 
@@ -172,7 +172,7 @@ describe("updateWebRuntimeCommand", () => {
     webRuntimeMocks.stopManagedWebRuntime.mockImplementation(
       async () =>
         ({
-          port: 3100,
+          port: 4200,
           stoppedPids: [1234],
           skippedForeignPids: [],
         }) as { port: number; stoppedPids: number[]; skippedForeignPids: number[] },
@@ -189,8 +189,8 @@ describe("updateWebRuntimeCommand", () => {
       deployedDenchVersion: "2.1.0",
       deployedAt: "2026-01-01T00:00:00.000Z",
       sourceStandaloneServer: "/tmp/server.js",
-      lastPort: 3100,
-      lastGatewayPort: 19001,
+      lastPort: 4200,
+      lastGatewayPort: 20001,
     }));
     webRuntimeMocks.startManagedWebRuntime.mockReset();
     webRuntimeMocks.startManagedWebRuntime.mockImplementation(() => ({
@@ -292,7 +292,7 @@ describe("updateWebRuntimeCommand", () => {
     expect(spawnMock).not.toHaveBeenCalled();
     expect(webRuntimeMocks.stopManagedWebRuntime).toHaveBeenCalledWith({
       stateDir: "/tmp/.openclaw-animclaw",
-      port: 3100,
+      port: 4200,
       includeLegacyStandalone: true,
     });
     expect(webRuntimeMocks.ensureManagedWebRuntime).toHaveBeenCalled();
@@ -303,7 +303,7 @@ describe("updateWebRuntimeCommand", () => {
 describe("stopWebRuntimeCommand", () => {
   it("reports foreign listeners without terminating them (preserves process boundaries)", async () => {
     webRuntimeMocks.stopManagedWebRuntime.mockResolvedValue({
-      port: 3100,
+      port: 4200,
       stoppedPids: [],
       skippedForeignPids: [91, 92],
     });
@@ -311,7 +311,7 @@ describe("stopWebRuntimeCommand", () => {
 
     const summary = await stopWebRuntimeCommand(
       {
-        webPort: "3100",
+        webPort: "4200",
       },
       runtime,
     );
@@ -328,7 +328,7 @@ describe("startWebRuntimeCommand", () => {
     webRuntimeMocks.stopManagedWebRuntime.mockImplementation(
       async () =>
         ({
-          port: 3100,
+          port: 4200,
           stoppedPids: [1234],
           skippedForeignPids: [],
         }) as { port: number; stoppedPids: number[]; skippedForeignPids: number[] },
@@ -358,7 +358,7 @@ describe("startWebRuntimeCommand", () => {
 
   it("fails closed when non-animclaw listeners still own the port (prevents cross-process takeover)", async () => {
     webRuntimeMocks.stopManagedWebRuntime.mockResolvedValue({
-      port: 3100,
+      port: 4200,
       stoppedPids: [],
       skippedForeignPids: [9912],
     });
@@ -387,14 +387,14 @@ describe("startWebRuntimeCommand", () => {
     const runtime = runtimeStub();
     const summary = await startWebRuntimeCommand(
       {
-        webPort: "3100",
+        webPort: "4200",
       },
       runtime,
     );
 
     expect(webRuntimeMocks.stopManagedWebRuntime).toHaveBeenCalledWith({
       stateDir: "/tmp/.openclaw-animclaw",
-      port: 3100,
+      port: 4200,
       includeLegacyStandalone: true,
     });
     const startMock =
@@ -403,42 +403,42 @@ describe("startWebRuntimeCommand", () => {
         : webRuntimeMocks.startManagedWebRuntime;
     expect(startMock).toHaveBeenCalledWith({
       stateDir: "/tmp/.openclaw-animclaw",
-      port: 3100,
-      gatewayPort: 19001,
+      port: 4200,
+      gatewayPort: 20001,
     });
     expect(webRuntimeMocks.ensureManagedWebRuntime).not.toHaveBeenCalled();
     expect(spawnMock).not.toHaveBeenCalled();
     expect(summary.started).toBe(true);
   });
 
-  it("falls back to AnimClaw port 19001 when manifest has no lastGatewayPort (prevents 18789 hijack)", async () => {
+  it("falls back to AnimClaw port 20001 when manifest has no lastGatewayPort (prevents 18789 hijack)", async () => {
     webRuntimeMocks.readManagedWebRuntimeManifest.mockReturnValue({
       schemaVersion: 1,
       deployedDenchVersion: "2.1.0",
       deployedAt: "2026-01-01T00:00:00.000Z",
       sourceStandaloneServer: "/tmp/server.js",
-      lastPort: 3100,
+      lastPort: 4200,
     });
     const runtime = runtimeStub();
-    await startWebRuntimeCommand({ webPort: "3100" }, runtime);
+    await startWebRuntimeCommand({ webPort: "4200" }, runtime);
 
     const startMock =
       process.platform === "darwin"
         ? launchdMocks.installWebRuntimeLaunchAgent
         : webRuntimeMocks.startManagedWebRuntime;
-    expect(startMock).toHaveBeenCalledWith(expect.objectContaining({ gatewayPort: 19001 }));
+    expect(startMock).toHaveBeenCalledWith(expect.objectContaining({ gatewayPort: 20001 }));
   });
 
-  it("falls back to AnimClaw port 19001 when manifest is null (fresh install, prevents 18789 hijack)", async () => {
+  it("falls back to AnimClaw port 20001 when manifest is null (fresh install, prevents 18789 hijack)", async () => {
     webRuntimeMocks.readManagedWebRuntimeManifest.mockReturnValue(null);
     const runtime = runtimeStub();
-    await startWebRuntimeCommand({ webPort: "3100" }, runtime);
+    await startWebRuntimeCommand({ webPort: "4200" }, runtime);
 
     const startMock =
       process.platform === "darwin"
         ? launchdMocks.installWebRuntimeLaunchAgent
         : webRuntimeMocks.startManagedWebRuntime;
-    expect(startMock).toHaveBeenCalledWith(expect.objectContaining({ gatewayPort: 19001 }));
+    expect(startMock).toHaveBeenCalledWith(expect.objectContaining({ gatewayPort: 20001 }));
   });
 });
 
@@ -449,7 +449,7 @@ describe("restartWebRuntimeCommand", () => {
     webRuntimeMocks.stopManagedWebRuntime.mockImplementation(
       async () =>
         ({
-          port: 3100,
+          port: 4200,
           stoppedPids: [1234],
           skippedForeignPids: [],
         }) as { port: number; stoppedPids: number[]; skippedForeignPids: number[] },
@@ -481,14 +481,14 @@ describe("restartWebRuntimeCommand", () => {
     const runtime = runtimeStub();
     const summary = await restartWebRuntimeCommand(
       {
-        webPort: "3100",
+        webPort: "4200",
       },
       runtime,
     );
 
     expect(webRuntimeMocks.stopManagedWebRuntime).toHaveBeenCalledWith({
       stateDir: "/tmp/.openclaw-animclaw",
-      port: 3100,
+      port: 4200,
       includeLegacyStandalone: true,
     });
     const startMock =
@@ -497,8 +497,8 @@ describe("restartWebRuntimeCommand", () => {
         : webRuntimeMocks.startManagedWebRuntime;
     expect(startMock).toHaveBeenCalledWith({
       stateDir: "/tmp/.openclaw-animclaw",
-      port: 3100,
-      gatewayPort: 19001,
+      port: 4200,
+      gatewayPort: 20001,
     });
     expect(webRuntimeMocks.ensureManagedWebRuntime).not.toHaveBeenCalled();
     expect(summary.started).toBe(true);
