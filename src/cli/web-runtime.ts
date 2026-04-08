@@ -830,6 +830,40 @@ export function startManagedWebRuntime(params: {
   };
 }
 
+/**
+ * Parse a .env / .env.local file into a key→value record.
+ * Handles `KEY=value`, `KEY="value"`, `KEY='value'`, blank lines, and `#` comments.
+ * Does NOT support multi-line values or variable substitution.
+ */
+function parseDotEnvFile(filePath: string): NodeJS.ProcessEnv {
+  const result: NodeJS.ProcessEnv = {};
+  let content: string;
+  try {
+    content = readFileSync(filePath, "utf-8");
+  } catch {
+    return result;
+  }
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eqIdx = line.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = line.slice(0, eqIdx).trim();
+    if (!key) continue;
+    let value = line.slice(eqIdx + 1);
+    // Strip inline comments (only when value is not quoted)
+    const firstChar = value.trim()[0];
+    if (firstChar === '"' || firstChar === "'") {
+      const closeIdx = value.indexOf(firstChar, 1);
+      value = closeIdx !== -1 ? value.slice(1, closeIdx) : value.slice(1);
+    } else {
+      value = value.split("#")[0]!.trim();
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
 export async function ensureManagedWebRuntime(params: {
   stateDir: string;
   packageRoot: string;
@@ -840,6 +874,7 @@ export async function ensureManagedWebRuntime(params: {
     stateDir: string;
     port: number;
     gatewayPort: number;
+    env?: NodeJS.ProcessEnv;
   }) => StartManagedWebRuntimeResult;
 }): Promise<{ ready: boolean; reason: string }> {
   const install = installManagedWebRuntime({
@@ -871,11 +906,18 @@ export async function ensureManagedWebRuntime(params: {
     };
   }
 
+  // Load web-app env vars from apps/web/.env.local so secrets like SUPABASE_URL
+  // and AUTH_SECRET are available to the standalone server.  The Next.js standalone
+  // build does not auto-load .env.local in production mode, so we inject them here.
+  const webEnvPath = path.join(params.packageRoot, "apps", "web", ".env.local");
+  const webEnv = parseDotEnvFile(webEnvPath);
+
   const doStart = params.startFn ?? startManagedWebRuntime;
   const start = doStart({
     stateDir: params.stateDir,
     port: params.port,
     gatewayPort: params.gatewayPort,
+    env: webEnv,
   });
   if (!start.started) {
     return {

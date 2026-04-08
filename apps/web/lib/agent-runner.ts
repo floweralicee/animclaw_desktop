@@ -1,3 +1,4 @@
+import { createPrivateKey, createPublicKey, sign as cryptoSign } from "node:crypto";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { existsSync, readFileSync } from "node:fs";
@@ -133,6 +134,88 @@ type GatewayConnectionSettings = {
 	password?: string;
 };
 
+type DeviceIdentity = {
+	deviceId: string;
+	privateKeyPem: string;
+	/** Raw 32-byte Ed25519 public key encoded as base64url. */
+	publicKeyB64url: string;
+};
+
+/**
+ * Load the local openclaw device identity (Ed25519 keypair + deviceId) so the
+ * web-server connection can sign gateway challenges and obtain operator.write
+ * scope in OpenClaw ≥ 2026.4.5, which restricts the shared gateway token to
+ * operator.read only.
+ */
+function loadDeviceIdentity(stateDir: string): DeviceIdentity | null {
+	const identityPath = join(stateDir, "identity", "device.json");
+	if (!existsSync(identityPath)) {
+		return null;
+	}
+	try {
+		const data = parseJsonObject(readFileSync(identityPath, "utf-8"));
+		if (
+			!data ||
+			typeof data.deviceId !== "string" ||
+			typeof data.privateKeyPem !== "string"
+		) {
+			return null;
+		}
+		const privateKey = createPrivateKey(data.privateKeyPem as string);
+		const publicKey = createPublicKey(privateKey);
+		const derBytes = publicKey.export({ type: "spki", format: "der" }) as Buffer;
+		// Ed25519 SPKI DER: last 32 bytes are the raw public key.
+		const rawKey32 = derBytes.slice(-32);
+		const publicKeyB64url = rawKey32
+			.toString("base64")
+			.replace(/\+/g, "-")
+			.replace(/\//g, "_")
+			.replace(/=/g, "");
+		return {
+			deviceId: data.deviceId as string,
+			privateKeyPem: data.privateKeyPem as string,
+			publicKeyB64url,
+		};
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Build the V3 device-auth signing payload used by the openclaw gateway.
+ * Format: "v3|deviceId|clientId|clientMode|role|scope1,scope2|signedAtMs|token|nonce|platform|deviceFamily"
+ */
+function buildDeviceAuthPayloadV3(params: {
+	deviceId: string;
+	clientId: string;
+	clientMode: string;
+	role: string;
+	scopes: string[];
+	signedAtMs: number;
+	token?: string | null;
+	nonce: string;
+	platform?: string | null;
+	deviceFamily?: string | null;
+}): string {
+	const scopes = params.scopes.join(",");
+	const token = params.token ?? "";
+	const platform = (params.platform ?? "").trim().toLowerCase();
+	const deviceFamily = (params.deviceFamily ?? "").trim().toLowerCase();
+	return [
+		"v3",
+		params.deviceId,
+		params.clientId,
+		params.clientMode,
+		params.role,
+		scopes,
+		String(params.signedAtMs),
+		token,
+		params.nonce,
+		platform,
+		deviceFamily,
+	].join("|");
+}
+
 type PendingGatewayRequest = {
 	resolve: (value: GatewayResFrame) => void;
 	reject: (error: Error) => void;
@@ -236,10 +319,7 @@ function readGatewayConfigFromStateDir(
 
 function resolveGatewayConnectionCandidates(): GatewayConnectionSettings[] {
 	const envUrl = process.env.OPENCLAW_GATEWAY_URL?.trim();
-	// Local monorepo dev: root `.env` often carries `DENCH_API_KEY` only; use it as gateway auth.
-	const envToken =
-		process.env.OPENCLAW_GATEWAY_TOKEN?.trim() ||
-		process.env.DENCH_API_KEY?.trim();
+	const envToken = process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
 	const envPassword = process.env.OPENCLAW_GATEWAY_PASSWORD?.trim();
 	const envPort = parsePort(process.env.OPENCLAW_GATEWAY_PORT);
 
@@ -306,6 +386,8 @@ function resolveGatewayConnectionCandidates(): GatewayConnectionSettings[] {
 export function buildConnectParams(
 	settings: GatewayConnectionSettings,
 	options?: BuildConnectParamsOptions,
+	challenge?: { nonce: string; ts: number } | null,
+	deviceIdentity?: DeviceIdentity | null,
 ): Record<string, unknown> {
 	const optionCaps = options?.caps;
 	const caps = Array.isArray(optionCaps)
@@ -314,6 +396,7 @@ export function buildConnectParams(
 			)
 		: DEFAULT_GATEWAY_CLIENT_CAPS;
 	const clientMode = options?.clientMode ?? "backend";
+	const scopes = ["operator.read", "operator.write", "operator.admin"];
 	const auth =
 		settings.token || settings.password
 			? {
@@ -321,6 +404,43 @@ export function buildConnectParams(
 					...(settings.password ? { password: settings.password } : {}),
 				}
 			: undefined;
+
+	// Build device signature when both a challenge nonce and local device
+	// identity are available.  This upgrades the connection from operator.read
+	// (shared-token-only) to full operator.write in OpenClaw ≥ 2026.4.5.
+	let deviceParams: Record<string, unknown> | undefined;
+	if (challenge && deviceIdentity) {
+		try {
+			const signedAtMs = Date.now();
+			const payload = buildDeviceAuthPayloadV3({
+				deviceId: deviceIdentity.deviceId,
+				clientId: "gateway-client",
+				clientMode,
+				role: "operator",
+				scopes,
+				signedAtMs,
+				token: settings.token ?? null,
+				nonce: challenge.nonce,
+				platform: process.platform,
+				deviceFamily: null,
+			});
+			const privateKey = createPrivateKey(deviceIdentity.privateKeyPem);
+			const signature = cryptoSign(null, Buffer.from(payload), privateKey)
+				.toString("base64")
+				.replace(/\+/g, "-")
+				.replace(/\//g, "_")
+				.replace(/=/g, "");
+			deviceParams = {
+				id: deviceIdentity.deviceId,
+				publicKey: deviceIdentity.publicKeyB64url,
+				signature,
+				signedAt: signedAtMs,
+				nonce: challenge.nonce,
+			};
+		} catch {
+			// Device signing failed — fall back to token-only auth.
+		}
+	}
 
 	return {
 		minProtocol: 3,
@@ -335,9 +455,10 @@ export function buildConnectParams(
 		locale: "en-US",
 		userAgent: "animclaw-web",
 		role: "operator",
-		scopes: ["operator.read", "operator.write", "operator.admin"],
+		scopes,
 		caps,
 		...(auth ? { auth } : {}),
+		...(deviceParams ? { device: deviceParams } : {}),
 	};
 }
 
@@ -394,10 +515,15 @@ function toMessageText(data: unknown): string | null {
 	return null;
 }
 
+const CHALLENGE_WAIT_MS = 300;
+
 class GatewayWsClient {
 	private ws: NodeWebSocket | null = null;
 	private pending = new Map<string, PendingGatewayRequest>();
 	private closed = false;
+	private challengeNonce: string | null = null;
+	private challengeTs: number | null = null;
+	private challengeListeners: Array<(c: { nonce: string; ts: number }) => void> = [];
 
 	constructor(
 		private readonly settings: GatewayConnectionSettings,
@@ -501,6 +627,33 @@ class GatewayWsClient {
 		}
 	}
 
+	/**
+	 * Wait for the gateway's unsolicited `connect.challenge` event (sent when a
+	 * WebSocket connection is opened). Returns the challenge payload immediately
+	 * if it has already arrived, or as soon as it does, or null if the timeout
+	 * is reached (e.g. older gateway builds that don't send one).
+	 */
+	async waitForChallenge(
+		timeoutMs = CHALLENGE_WAIT_MS,
+	): Promise<{ nonce: string; ts: number } | null> {
+		if (this.challengeNonce && this.challengeTs !== null) {
+			return { nonce: this.challengeNonce, ts: this.challengeTs };
+		}
+		return new Promise<{ nonce: string; ts: number } | null>((resolve) => {
+			const timer = setTimeout(() => {
+				this.challengeListeners = this.challengeListeners.filter(
+					(l) => l !== listener,
+				);
+				resolve(null);
+			}, timeoutMs);
+			const listener = (c: { nonce: string; ts: number }) => {
+				clearTimeout(timer);
+				resolve(c);
+			};
+			this.challengeListeners.push(listener);
+		});
+	}
+
 	private flushPending(error: Error): void {
 		for (const pending of this.pending.values()) {
 			clearTimeout(pending.timeout);
@@ -533,7 +686,26 @@ class GatewayWsClient {
 		}
 
 		if (frame.type === "event") {
-			this.onEvent(frame as GatewayEventFrame);
+			const eventFrame = frame as GatewayEventFrame;
+			// Capture the gateway's unsolicited challenge so we can include a
+			// device signature in the connect request and obtain operator.write.
+			if (eventFrame.event === "connect.challenge") {
+				const payload = asRecord(eventFrame.payload);
+				if (
+					payload &&
+					typeof payload.nonce === "string" &&
+					typeof payload.ts === "number"
+				) {
+					this.challengeNonce = payload.nonce;
+					this.challengeTs = payload.ts;
+					const challenge = { nonce: this.challengeNonce, ts: this.challengeTs };
+					for (const listener of this.challengeListeners) {
+						listener(challenge);
+					}
+					this.challengeListeners = [];
+				}
+			}
+			this.onEvent(eventFrame);
 		}
 	}
 }
@@ -593,9 +765,11 @@ class GatewayProcessHandle
 				(code, reason) => this.handleSocketClose(code, reason),
 			);
 			this.client = client;
+			const challenge = await client.waitForChallenge();
+			const deviceIdentity = loadDeviceIdentity(resolveOpenClawStateDir());
 			const connectRes = await this.client.request(
 				"connect",
-				buildConnectParams(settings),
+				buildConnectParams(settings, undefined, challenge, deviceIdentity),
 			);
 			if (!connectRes.ok) {
 				throw new Error(frameErrorMessage(connectRes));
@@ -756,6 +930,7 @@ class GatewayProcessHandle
 		if (this.finished) {
 			return;
 		}
+		// connect.challenge is handled in GatewayWsClient.handleMessageText; ignore here.
 		if (frame.event === "connect.challenge") {
 			return;
 		}
@@ -926,9 +1101,11 @@ export async function callGatewayRpc(
 		},
 	);
 	try {
+		const challenge = await client.waitForChallenge();
+		const deviceIdentity = loadDeviceIdentity(resolveOpenClawStateDir());
 		const connect = await client.request(
 			"connect",
-			buildConnectParams(settings),
+			buildConnectParams(settings, undefined, challenge, deviceIdentity),
 			options?.timeoutMs ?? REQUEST_TIMEOUT_MS,
 		);
 		if (!connect.ok) {

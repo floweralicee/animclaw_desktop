@@ -6,9 +6,11 @@ import {
   buildBootstrapDiagnostics,
   checkAgentAuth,
   isPersistedPortAcceptable,
+  parsePendingDeviceCount,
   readExistingGatewayPort,
   resolveBootstrapRolloutStage,
   isLegacyFallbackEnabled,
+  isPluginLoadOnlyError,
   type BootstrapDiagnostics,
 } from "./bootstrap-external.js";
 
@@ -377,6 +379,51 @@ describe("readExistingGatewayPort", () => {
   });
 });
 
+describe("isPluginLoadOnlyError", () => {
+  it("returns true for a single Telegram ENOENT plugin error line", () => {
+    const stderr =
+      'Error: bundled plugin entry "./src/channel.setup.js" failed to open from ' +
+      '"/home/user/.nvm/versions/node/v24.1.0/lib/node_modules/openclaw/dist/extensions/telegram/setup-entry.js" ' +
+      '(resolved "...telegram/src/channel.setup.js", plugin root "...telegram", reason "path"): ' +
+      "ENOENT: no such file or directory, lstat '/...telegram/src/channel.setup.js'";
+    expect(isPluginLoadOnlyError(stderr)).toBe(true);
+  });
+
+  it("returns true when all lines match plugin load failure patterns", () => {
+    const stderr = [
+      'Error: bundled plugin entry "./src/channel.setup.js" failed to open from "...telegram/setup-entry.js"',
+      "ENOENT: no such file or directory, lstat '/path/to/file'",
+      'plugin root "...telegram", reason "path"',
+    ].join("\n");
+    expect(isPluginLoadOnlyError(stderr)).toBe(true);
+  });
+
+  it("returns false when stderr contains a real error mixed with a plugin error", () => {
+    const stderr = [
+      'Error: bundled plugin entry "./src/channel.setup.js" failed to open',
+      "Error: Failed to initialize gateway daemon",
+    ].join("\n");
+    expect(isPluginLoadOnlyError(stderr)).toBe(false);
+  });
+
+  it("returns false for empty stderr", () => {
+    expect(isPluginLoadOnlyError("")).toBe(false);
+    expect(isPluginLoadOnlyError("   \n  \n")).toBe(false);
+  });
+
+  it("returns false for a generic error unrelated to plugins", () => {
+    expect(isPluginLoadOnlyError("Error: ECONNREFUSED 127.0.0.1:20001")).toBe(false);
+  });
+
+  it("returns false when one line is a real error beside plugin errors", () => {
+    const stderr = [
+      'Error: bundled plugin entry "./src/foo.js" failed to open from "...setup-entry.js"',
+      "Error: Cannot find module 'some-core-module'",
+    ].join("\n");
+    expect(isPluginLoadOnlyError(stderr)).toBe(false);
+  });
+});
+
 describe("isPersistedPortAcceptable", () => {
   let stateDir: string;
 
@@ -419,5 +466,80 @@ describe("isPersistedPortAcceptable", () => {
     const port = readExistingGatewayPort(stateDir);
     expect(port).toBe(20001);
     expect(isPersistedPortAcceptable(port)).toBe(true);
+  });
+});
+
+// ── parsePendingDeviceCount ───────────────────────────────────────────────────
+
+describe("parsePendingDeviceCount", () => {
+  it("returns 0 for empty or non-JSON input", () => {
+    expect(parsePendingDeviceCount("")).toBe(0);
+    expect(parsePendingDeviceCount("   ")).toBe(0);
+    expect(parsePendingDeviceCount("not json")).toBe(0);
+  });
+
+  it("returns 0 when no pending devices in root array", () => {
+    const output = JSON.stringify([
+      { id: "dev-1", status: "approved" },
+      { id: "dev-2", status: "approved" },
+    ]);
+    expect(parsePendingDeviceCount(output)).toBe(0);
+  });
+
+  it("counts pending devices in root array format", () => {
+    const output = JSON.stringify([
+      { id: "dev-1", status: "approved" },
+      { id: "dev-2", status: "pending" },
+    ]);
+    expect(parsePendingDeviceCount(output)).toBe(1);
+  });
+
+  it("counts multiple pending in root array", () => {
+    const output = JSON.stringify([
+      { id: "dev-1", status: "pending" },
+      { id: "dev-2", status: "pending" },
+    ]);
+    expect(parsePendingDeviceCount(output)).toBe(2);
+  });
+
+  it("handles { pending: [...] } format (all items are pending by definition)", () => {
+    const output = JSON.stringify({
+      pending: [{ id: "req-1" }, { id: "req-2" }],
+    });
+    expect(parsePendingDeviceCount(output)).toBe(2);
+  });
+
+  it("handles { devices: [...] } format with status field", () => {
+    const output = JSON.stringify({
+      devices: [
+        { id: "dev-1", status: "approved" },
+        { id: "dev-2", status: "pending" },
+      ],
+    });
+    expect(parsePendingDeviceCount(output)).toBe(1);
+  });
+
+  it("handles { requests: [...] } format", () => {
+    const output = JSON.stringify({
+      requests: [{ id: "req-1", status: "pending" }],
+    });
+    expect(parsePendingDeviceCount(output)).toBe(1);
+  });
+
+  it("treats approved=false as pending", () => {
+    const output = JSON.stringify([
+      { id: "dev-1", approved: true },
+      { id: "dev-2", approved: false },
+    ]);
+    expect(parsePendingDeviceCount(output)).toBe(1);
+  });
+
+  it("parses plain-text '1 pending' output as fallback", () => {
+    expect(parsePendingDeviceCount("1 pending request")).toBe(1);
+    expect(parsePendingDeviceCount("3 pending device(s) waiting for approval")).toBe(3);
+  });
+
+  it("returns 0 for JSON object with no recognized device keys", () => {
+    expect(parsePendingDeviceCount(JSON.stringify({ foo: "bar" }))).toBe(0);
   });
 });

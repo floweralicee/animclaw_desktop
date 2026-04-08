@@ -1,16 +1,6 @@
 import type { NextConfig } from "next";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { homedir } from "node:os";
-
-const require = createRequire(import.meta.url);
-const { loadEnvConfig } = require("@next/env") as {
-	loadEnvConfig: (dir: string) => void;
-};
-
-// Load repository root `.env` so shared keys (e.g. `DENCH_API_KEY` for gateway auth) are
-// available when dev runs with cwd `apps/web` (`pnpm desktop:dev`, `pnpm web:dev`).
-loadEnvConfig(path.join(import.meta.dirname, "..", ".."));
 
 const nextConfig: NextConfig = {
   // Produce a self-contained standalone build so npm global installs

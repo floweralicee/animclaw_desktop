@@ -41,21 +41,50 @@ const OPENCLAW_SETUP_PROGRESS_BAR_WIDTH = 16;
 
 type MediaApiKeyDef = { envKey: string; label: string; configPath: string };
 
+type LlmProviderDef = {
+  value: string;
+  label: string;
+  envKey: string;
+  keyHint: string;
+  defaultModel: string;
+};
+
+const LLM_PROVIDERS: readonly LlmProviderDef[] = [
+  {
+    value: "anthropic",
+    label: "Anthropic (Claude)",
+    envKey: "ANTHROPIC_API_KEY",
+    keyHint: "sk-ant-...",
+    defaultModel: "anthropic/claude-3.5-sonnet-20241022",
+  },
+  {
+    value: "openai",
+    label: "OpenAI (GPT-4o)",
+    envKey: "OPENAI_API_KEY",
+    keyHint: "sk-...",
+    defaultModel: "openai/gpt-4o",
+  },
+] as const;
+
+// configPath uses the `env.*` namespace so openclaw injects the key as an
+// environment variable into the gateway process (the correct storage for
+// third-party provider tokens).  The old `media.apiKeys.*` namespace is not
+// recognized by the current openclaw CLI and causes a validation error.
 const IMAGE_PROVIDERS: readonly MediaApiKeyDef[] = [
-  { envKey: "FAL_KEY", label: "fal.ai (Nano Banana, FLUX, etc.)", configPath: "media.apiKeys.fal" },
-  { envKey: "STABILITY_API_KEY", label: "Stability AI (Stable Diffusion)", configPath: "media.apiKeys.stability" },
-  { envKey: "OPENAI_API_KEY", label: "OpenAI / DALL-E", configPath: "media.apiKeys.openai" },
-  { envKey: "REPLICATE_API_TOKEN", label: "Replicate", configPath: "media.apiKeys.replicate" },
+  { envKey: "FAL_KEY", label: "fal.ai (Nano Banana, FLUX, etc.)", configPath: "env.FAL_KEY" },
+  { envKey: "STABILITY_API_KEY", label: "Stability AI (Stable Diffusion)", configPath: "env.STABILITY_API_KEY" },
+  { envKey: "OPENAI_API_KEY", label: "OpenAI / DALL-E", configPath: "env.OPENAI_API_KEY" },
+  { envKey: "REPLICATE_API_TOKEN", label: "Replicate", configPath: "env.REPLICATE_API_TOKEN" },
 ] as const;
 
 const VIDEO_PROVIDERS: readonly MediaApiKeyDef[] = [
-  { envKey: "FAL_KEY", label: "fal.ai (Veo, Kling, etc.)", configPath: "media.apiKeys.fal" },
-  { envKey: "RUNWAY_API_KEY", label: "Runway (Gen-3)", configPath: "media.apiKeys.runway" },
-  { envKey: "REPLICATE_API_TOKEN", label: "Replicate", configPath: "media.apiKeys.replicate" },
+  { envKey: "FAL_KEY", label: "fal.ai (Veo, Kling, etc.)", configPath: "env.FAL_KEY" },
+  { envKey: "RUNWAY_API_KEY", label: "Runway (Gen-3)", configPath: "env.RUNWAY_API_KEY" },
+  { envKey: "REPLICATE_API_TOKEN", label: "Replicate", configPath: "env.REPLICATE_API_TOKEN" },
 ] as const;
 
 const MODELING_PROVIDERS: readonly MediaApiKeyDef[] = [
-  { envKey: "MESHY_API_KEY", label: "Meshy AI (Image-to-3D)", configPath: "media.apiKeys.meshy" },
+  { envKey: "MESHY_API_KEY", label: "Meshy AI (Image-to-3D)", configPath: "env.MESHY_API_KEY" },
 ] as const;
 
 const MEDIA_API_KEYS: readonly MediaApiKeyDef[] = (() => {
@@ -642,6 +671,112 @@ async function persistMediaKey(
   }
 }
 
+/**
+ * Prompt the user to select an LLM provider (Anthropic or OpenAI) and enter
+ * their API key when bringing their own keys. Configures:
+ *   - gateway.provider
+ *   - gateway.apiKey
+ *   - agents.defaults.model.primary (sensible default for the chosen provider)
+ */
+async function promptLlmProviderKey(params: {
+  openclawCommand: string;
+  profile: string;
+  runtime: RuntimeEnv;
+}): Promise<void> {
+  note(
+    [
+      "AnimClaw needs an LLM API key to power chat and agent features.",
+      "Choose a provider and enter your key below, or skip to configure later via:",
+      "  openclaw --profile animclaw config set gateway.provider <provider>",
+      "  openclaw --profile animclaw config set gateway.apiKey <key>",
+    ].join("\n"),
+    "LLM / Chat API Key",
+  );
+
+  // Check if an env var is already set for any provider.
+  const envProvider = LLM_PROVIDERS.find(
+    (p) => process.env[p.envKey]?.trim(),
+  );
+
+  let chosenProvider: LlmProviderDef | undefined;
+
+  if (envProvider) {
+    params.runtime.log(
+      theme.muted(
+        `  Detected ${envProvider.envKey} in environment — using ${envProvider.label}.`,
+      ),
+    );
+    chosenProvider = envProvider;
+  } else {
+    const providerChoice = await select({
+      message: stylePromptMessage("Which LLM provider would you like to use?"),
+      options: [
+        ...LLM_PROVIDERS.map((p) => ({ value: p.value, label: p.label, hint: p.keyHint })),
+        { value: "skip", label: "Skip for now", hint: "Configure later" },
+      ],
+    });
+
+    if (isCancel(providerChoice) || providerChoice === "skip") {
+      return;
+    }
+
+    chosenProvider = LLM_PROVIDERS.find((p) => p.value === providerChoice);
+    if (!chosenProvider) {return;}
+  }
+
+  // Resolve or prompt for the API key.
+  const existingEnvKey = process.env[chosenProvider.envKey]?.trim();
+  let apiKey: string | undefined = existingEnvKey;
+
+  if (!apiKey) {
+    const prompted = await password({
+      message: stylePromptMessage(
+        `${chosenProvider.label} API key (${chosenProvider.envKey})`,
+      ),
+    });
+    if (isCancel(prompted) || !prompted || !prompted.trim()) {
+      return;
+    }
+    apiKey = prompted.trim();
+  }
+
+  try {
+    await runOpenClawOrThrow({
+      openclawCommand: params.openclawCommand,
+      args: ["--profile", params.profile, "config", "set", "gateway.provider", chosenProvider.value],
+      timeoutMs: 10_000,
+      errorMessage: "Failed to configure LLM gateway provider.",
+    });
+    await runOpenClawOrThrow({
+      openclawCommand: params.openclawCommand,
+      args: ["--profile", params.profile, "config", "set", "gateway.apiKey", apiKey],
+      timeoutMs: 10_000,
+      errorMessage: "Failed to configure LLM gateway API key.",
+    });
+    await runOpenClawOrThrow({
+      openclawCommand: params.openclawCommand,
+      args: [
+        "--profile", params.profile,
+        "config", "set",
+        "agents.defaults.model.primary", chosenProvider.defaultModel,
+      ],
+      timeoutMs: 10_000,
+      errorMessage: "Failed to set default LLM model.",
+    });
+    params.runtime.log(
+      theme.muted(
+        `${chosenProvider.label} configured (default model: ${chosenProvider.defaultModel}).`,
+      ),
+    );
+  } catch (err) {
+    params.runtime.log(
+      theme.warn(
+        `Failed to configure ${chosenProvider.label}: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
+  }
+}
+
 async function promptMediaGenerationKeys(params: {
   openclawCommand: string;
   profile: string;
@@ -744,21 +879,95 @@ async function runOpenClawOrThrow(params: {
  * Runs an OpenClaw command attached to the current terminal.
  * Use this for interactive flows like `openclaw onboard`.
  */
+/**
+ * Returns true when every non-empty line in `stderr` is a known-benign plugin
+ * load failure (e.g. the Telegram extension referencing an un-built source
+ * file in the globally-installed openclaw package). These errors do not
+ * indicate a real onboard failure — the wizard completes successfully before
+ * they surface.
+ */
+export function isPluginLoadOnlyError(stderr: string): boolean {
+  if (!stderr.trim()) return false;
+  const lines = stderr.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  return lines.every((line) =>
+    /bundled plugin entry .* failed to open/.test(line) ||
+    /ENOENT: no such file or directory/.test(line) ||
+    /plugin root .* reason "path"/.test(line),
+  );
+}
+
+/**
+ * Run openclaw in interactive mode (stdin/stdout inherited so the user can
+ * interact with prompts) while still capturing stderr so we can detect
+ * known-benign plugin load errors (e.g. Telegram ENOENT) that should not
+ * abort the bootstrap.
+ */
 async function runOpenClawInteractiveOrThrow(params: {
   openclawCommand: string;
   args: string[];
   timeoutMs: number;
   errorMessage: string;
+  runtime?: RuntimeEnv;
 }): Promise<SpawnResult> {
-  const result = await runOpenClaw(
-    params.openclawCommand,
-    params.args,
-    params.timeoutMs,
-    "inherit",
-  );
+  const [command, ...args] = [params.openclawCommand, ...params.args];
+  if (!command) {
+    throw new Error(params.errorMessage);
+  }
+
+  const result = await new Promise<SpawnResult>((resolve, reject) => {
+    // Inherit stdin + stdout so the user's interactive prompts work, but
+    // pipe stderr so we can inspect it for known-benign errors.
+    const child = spawn(resolveCommandForPlatform(command), args, {
+      stdio: ["inherit", "inherit", "pipe"],
+    });
+
+    let stderr = "";
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        child.kill("SIGKILL");
+      }
+    }, params.timeoutMs);
+
+    child.stderr?.on("data", (chunk: Buffer | string) => {
+      const text = String(chunk);
+      stderr += text;
+      // Forward stderr to the terminal so the user still sees it.
+      process.stderr.write(text);
+    });
+
+    child.once("error", (error: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+
+    child.once("close", (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ code: typeof code === "number" ? code : 1, stdout: "", stderr });
+    });
+  });
+
   if (result.code === 0) {
     return result;
   }
+
+  // Non-zero exit: check whether the only errors are known-benign plugin load
+  // failures that don't indicate a real onboard problem.
+  if (isPluginLoadOnlyError(result.stderr)) {
+    params.runtime?.log(
+      theme.warn(
+        "Warning: a bundled plugin failed to load (non-fatal). " +
+        "Run `openclaw gateway restart` if you encounter issues.",
+      ),
+    );
+    return result;
+  }
+
   const detail = firstNonEmptyLine(result.stderr, result.stdout);
   throw new Error(detail ? `${params.errorMessage}\n${detail}` : params.errorMessage);
 }
@@ -1274,6 +1483,129 @@ async function ensureOpenClawCliAvailable(params: {
   };
 }
 
+/**
+ * Parses the number of pending device pairing requests from the JSON output
+ * of `openclaw devices list --json`. Returns 0 if nothing pending is found.
+ *
+ * Handles several response shapes emitted by different OpenClaw releases:
+ *   - root array:          [{ status: "pending", ... }]
+ *   - top-level pending:   { pending: [{ id: "..." }] }
+ *   - top-level devices:   { devices: [{ status: "pending", ... }] }
+ *   - top-level requests:  { requests: [{ status: "pending", ... }] }
+ */
+export function parsePendingDeviceCount(raw: string): number {
+  if (!raw?.trim()) return 0;
+  try {
+    const value: unknown = JSON.parse(raw.trim());
+
+    const isPending = (item: unknown): boolean => {
+      if (!item || typeof item !== "object") return false;
+      const obj = item as Record<string, unknown>;
+      return (
+        obj.status === "pending" ||
+        obj.state === "pending" ||
+        obj.approved === false
+      );
+    };
+
+    if (Array.isArray(value)) {
+      return value.filter(isPending).length;
+    }
+
+    if (value && typeof value === "object") {
+      const obj = value as Record<string, unknown>;
+      if (Array.isArray(obj.pending)) return obj.pending.length;
+      if (Array.isArray(obj.devices)) return obj.devices.filter(isPending).length;
+      if (Array.isArray(obj.requests)) return obj.requests.filter(isPending).length;
+    }
+  } catch {
+    // Non-JSON output: look for "N pending" in plain text
+    const match = /(\d+)\s+pending/i.exec(raw);
+    if (match) return Number.parseInt(match[1], 10);
+  }
+  return 0;
+}
+
+/**
+ * After `openclaw onboard`, the web runtime registers as a new device and its
+ * pairing request may be left in "pending" state (common in OpenClaw ≥ 2026.4
+ * which requires explicit device approval before granting operator.write).
+ *
+ * This function lists pending devices and, when exactly one is waiting,
+ * approves it automatically. If multiple requests are pending it logs a
+ * warning so the operator can resolve the ambiguity manually.
+ */
+async function tryAutoApproveDevicePairing(
+  openclawCommand: string,
+  profile: string,
+  runtime: RuntimeEnv,
+  showSpinner: boolean,
+): Promise<{ attempted: boolean; approved: boolean; skippedReason?: string }> {
+  const s = showSpinner ? spinner() : null;
+  try {
+    s?.start("Checking for pending device pairing requests…");
+
+    const listResult = await runOpenClaw(
+      openclawCommand,
+      ["--profile", profile, "devices", "list", "--json"],
+      15_000,
+    ).catch(() => null);
+
+    if (!listResult || listResult.code !== 0) {
+      s?.stop(theme.muted("Device pairing check skipped (devices list unavailable)."));
+      return { attempted: false, approved: false, skippedReason: "devices list failed" };
+    }
+
+    const pendingCount = parsePendingDeviceCount(listResult.stdout);
+
+    if (pendingCount === 0) {
+      s?.stop(theme.muted("No pending device pairing requests."));
+      return { attempted: false, approved: false, skippedReason: "none pending" };
+    }
+
+    if (pendingCount > 1) {
+      s?.stop(
+        theme.warn(
+          `${pendingCount} pending device pairing requests found. ` +
+            `Review and approve manually: openclaw --profile ${profile} devices list`,
+        ),
+      );
+      return {
+        attempted: false,
+        approved: false,
+        skippedReason: "multiple pending — manual approval required",
+      };
+    }
+
+    // Exactly one pending request — safe to auto-approve.
+    s?.message("Approving pending device pairing request…");
+    const approveResult = await runOpenClaw(
+      openclawCommand,
+      ["--profile", profile, "devices", "approve", "--latest"],
+      15_000,
+    ).catch(() => null);
+
+    if (!approveResult || approveResult.code !== 0) {
+      const detail = firstNonEmptyLine(approveResult?.stderr, approveResult?.stdout);
+      s?.stop(
+        theme.warn(`Device pairing auto-approve failed${detail ? `: ${detail}` : ""}.`),
+      );
+      return { attempted: true, approved: false, skippedReason: detail ?? "approve command failed" };
+    }
+
+    s?.stop(theme.muted("Device pairing approved — web runtime will connect with full operator scope."));
+    return { attempted: true, approved: true };
+  } catch (err) {
+    s?.stop(theme.muted("Device pairing check failed (non-fatal)."));
+    runtime.log(
+      theme.muted(
+        `Device pairing auto-approve error (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
+    return { attempted: false, approved: false, skippedReason: "unexpected error" };
+  }
+}
+
 async function probeGateway(
   openclawCommand: string,
   profile: string,
@@ -1397,20 +1729,15 @@ async function attemptGatewayAutoFix(params: {
     },
     {
       name: "openclaw gateway install --force",
-      args: [
-        "--profile",
-        params.profile,
-        "gateway",
-        "install",
-        "--force",
-        "--port",
-        String(params.gatewayPort),
-      ],
+      // Note: gateway port is already persisted in openclaw.json by ensureGatewayPort.
+      // The `gateway install` subcommand does not accept a --port flag.
+      args: ["--profile", params.profile, "gateway", "install", "--force"],
       timeoutMs: 2 * 60_000,
     },
     {
       name: "openclaw gateway start",
-      args: ["--profile", params.profile, "gateway", "start", "--port", String(params.gatewayPort)],
+      // Note: `gateway start` does not accept a --port flag; port comes from config.
+      args: ["--profile", params.profile, "gateway", "start"],
       timeoutMs: 2 * 60_000,
     },
   ];
@@ -2044,6 +2371,9 @@ export async function bootstrapCommand(
 
   let mediaKeyResults: MediaKeyResult[] | undefined;
   if (!useAnimclawGateway && !nonInteractive && !opts.json && process.stdin.isTTY) {
+    // First configure the LLM provider (chat/agent backbone), then media keys.
+    await promptLlmProviderKey({ openclawCommand, profile, runtime });
+
     mediaKeyResults = await promptMediaGenerationKeys({
       openclawCommand,
       profile,
@@ -2102,8 +2432,13 @@ export async function bootstrapCommand(
       args: onboardArgv,
       timeoutMs: 12 * 60_000,
       errorMessage: "OpenClaw onboarding failed.",
+      runtime,
     });
   }
+
+  // After onboarding, the web runtime registers as a new device. Auto-approve
+  // a single pending pairing request so it gets operator.write immediately.
+  await tryAutoApproveDevicePairing(openclawCommand, profile, runtime, !opts.json);
 
   const workspaceSeed = seedWorkspaceFromAssets({
     workspaceDir,

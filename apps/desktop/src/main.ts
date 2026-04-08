@@ -12,6 +12,7 @@ import path from "node:path";
 import os from "node:os";
 import http from "node:http";
 import { loadWindowState, saveWindowState } from "./window-state";
+import { loadExtraWebServerEnv } from "./load-web-env";
 
 if (require("electron-squirrel-startup")) app.quit();
 
@@ -88,13 +89,23 @@ function waitForServer(url: string, timeoutMs = 30_000): Promise<void> {
 
 function startNextServer(): ChildProcess {
   const serverPath = getStandalonePath();
+  const webEnv = loadExtraWebServerEnv();
+  const mergedEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...webEnv,
+    PORT: String(NEXT_PORT),
+    HOSTNAME: "localhost",
+    NODE_ENV: IS_DEV ? "development" : "production",
+  };
+  if (!(mergedEnv.AI_GATEWAY_API_KEY ?? "").trim()) {
+    console.warn(
+      "[desktop] AI_GATEWAY_API_KEY is not set. The web API cannot call the Vercel AI Gateway.\n" +
+        "  Add it to ~/.openclaw-animclaw/web-app.env (same format as apps/web/.env.local),\n" +
+        "  or set ANIMCLAW_WEB_ENV to a full path to a .env file.",
+    );
+  }
   const child = spawn(process.execPath, [serverPath], {
-    env: {
-      ...process.env,
-      PORT: String(NEXT_PORT),
-      HOSTNAME: "localhost",
-      NODE_ENV: IS_DEV ? "development" : "production",
-    },
+    env: mergedEnv,
     stdio: "pipe",
   });
 
