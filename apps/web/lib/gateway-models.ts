@@ -5,6 +5,11 @@
  * floating-point drift during aggregation.
  */
 
+import {
+  DENCH_CLOUD_STABLE_ID_TO_GATEWAY,
+  normalizeDenchCloudModelForGateway,
+} from "./dench-cloud-gateway";
+
 export type Provider = "openai" | "anthropic";
 
 export type ModelPricing = {
@@ -40,18 +45,29 @@ const ALL_MODELS: Record<string, ModelPricing> = {
  * Resolve a model string to its provider and pricing.
  *
  * Accepts bare names ("gpt-4o") or prefixed ("openai/gpt-4o", "anthropic/claude-sonnet-4-20250514").
+ * Dench Cloud / OpenClaw multi-segment ids (`dench-cloud/<stableId>`, `vercel-ai-gateway/anthropic/...`)
+ * are normalized first (see dench-cloud-gateway.ts).
  * Unknown models are routed by prefix heuristic with fallback pricing.
  */
 export function resolveModel(model: string): { provider: Provider; modelId: string; pricing: ModelPricing } {
-  let provider: Provider | undefined;
-  let modelId = model;
+  const normalized = normalizeDenchCloudModelForGateway(model);
+  if (normalized.startsWith("dench-cloud/")) {
+    const stableId = normalized.slice("dench-cloud/".length);
+    const known = Object.keys(DENCH_CLOUD_STABLE_ID_TO_GATEWAY).join(", ");
+    throw new Error(
+      `Unknown Dench Cloud model "${model}" (stableId: ${stableId}). Add it to DENCH_CLOUD_STABLE_ID_TO_GATEWAY. Known: ${known}`,
+    );
+  }
 
-  if (model.startsWith("openai/")) {
+  let provider: Provider | undefined;
+  let modelId = normalized;
+
+  if (normalized.startsWith("openai/")) {
     provider = "openai";
-    modelId = model.slice(7);
-  } else if (model.startsWith("anthropic/")) {
+    modelId = normalized.slice(7);
+  } else if (normalized.startsWith("anthropic/")) {
     provider = "anthropic";
-    modelId = model.slice(10);
+    modelId = normalized.slice(10);
   }
 
   const known = ALL_MODELS[modelId];
