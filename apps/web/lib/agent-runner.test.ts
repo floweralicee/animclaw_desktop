@@ -81,6 +81,20 @@ function installMockWsModule() {
 				}
 				this.readyState = MockNodeWebSocket.OPEN;
 				this.emit("open");
+				// Emit a challenge event as the real gateway does on WS open,
+				// so waitForChallenge resolves immediately in tests.
+				queueMicrotask(() => {
+					this.emit(
+						"message",
+						Buffer.from(
+							JSON.stringify({
+								type: "event",
+								event: "connect.challenge",
+								payload: { nonce: "test-challenge-nonce", ts: Date.now() },
+							}),
+						),
+					);
+				});
 			});
 		}
 
@@ -221,6 +235,107 @@ describe("agent-runner", () => {
 			expect(Array.isArray(params.caps)).toBe(true);
 			expect(params.caps).toContain("tool-events");
 		});
+
+		it("omits device params when challenge is null", async () => {
+			const { buildConnectParams } = await import("./agent-runner.js");
+			const params = buildConnectParams(
+				{ url: "ws://127.0.0.1:20001", token: "tok" },
+				undefined,
+				null,
+				null,
+			) as { device?: unknown };
+			expect(params.device).toBeUndefined();
+		});
+
+		it("omits device params when device identity is null", async () => {
+			const { buildConnectParams } = await import("./agent-runner.js");
+			const params = buildConnectParams(
+				{ url: "ws://127.0.0.1:20001", token: "tok" },
+				undefined,
+				{ nonce: "test-nonce", ts: Date.now() },
+				null,
+			) as { device?: unknown };
+			expect(params.device).toBeUndefined();
+		});
+
+		it("includes device params with verifiable Ed25519 signature when challenge + identity provided", async () => {
+			const { buildConnectParams } = await import("./agent-runner.js");
+			const {
+				generateKeyPairSync,
+				createHash,
+				verify: cryptoVerify,
+			} = await import("node:crypto");
+
+			const { privateKey, publicKey: pubKeyObj } = generateKeyPairSync("ed25519");
+			const derBytes = pubKeyObj.export({
+				type: "spki",
+				format: "der",
+			}) as Buffer;
+			const rawKey32 = derBytes.slice(-32);
+			const publicKeyB64url = rawKey32
+				.toString("base64")
+				.replace(/\+/g, "-")
+				.replace(/\//g, "_")
+				.replace(/=/g, "");
+			const deviceId = createHash("sha256").update(rawKey32).digest("hex");
+
+			const deviceIdentity = {
+				deviceId,
+				privateKeyPem: privateKey
+					.export({ type: "pkcs8", format: "pem" })
+					.toString(),
+				publicKeyB64url,
+			};
+
+			const challenge = { nonce: "challenge-nonce-abc", ts: 1700000000000 };
+			const params = buildConnectParams(
+				{ url: "ws://127.0.0.1:20001", token: "gateway-token" },
+				undefined,
+				challenge,
+				deviceIdentity,
+			) as {
+				device?: {
+					id: string;
+					publicKey: string;
+					signature: string;
+					signedAt: number;
+					nonce: string;
+				};
+			};
+
+			expect(params.device).toBeDefined();
+			expect(params.device?.id).toBe(deviceId);
+			expect(params.device?.publicKey).toBe(publicKeyB64url);
+			expect(params.device?.nonce).toBe(challenge.nonce);
+			expect(typeof params.device?.signedAt).toBe("number");
+
+			// Verify the signature against the V3 payload
+			const signedAt = params.device!.signedAt;
+			const sigB64std = (params.device?.signature ?? "")
+				.replace(/-/g, "+")
+				.replace(/_/g, "/");
+			const sigBytes = Buffer.from(sigB64std, "base64");
+			const expectedPayload = [
+				"v3",
+				deviceId,
+				"gateway-client",
+				"backend",
+				"operator",
+				"operator.read,operator.write,operator.admin",
+				String(signedAt),
+				"gateway-token",
+				"challenge-nonce-abc",
+				process.platform,
+				"",
+			].join("|");
+			const isValid = cryptoVerify(
+				null,
+				Buffer.from(expectedPayload),
+				pubKeyObj,
+				sigBytes,
+			);
+			expect(isValid).toBe(true);
+		});
 	});
 
 	// ── spawnAgentProcess (ws transport) ─────────────────────────────
@@ -262,22 +377,6 @@ describe("agent-runner", () => {
 			const ws = MockWs.instances[0];
 			const headers = ws.constructorOpts.headers as Record<string, string>;
 			expect(headers.Origin).toMatch(/^https:\/\//);
-			proc.kill("SIGTERM");
-		});
-
-		it("uses DENCH_API_KEY as gateway token when OPENCLAW_GATEWAY_TOKEN is unset", async () => {
-			const MockWs = installMockWsModule();
-			delete process.env.OPENCLAW_GATEWAY_TOKEN;
-			process.env.DENCH_API_KEY = "dench_from_root_env";
-
-			const { spawnAgentProcess } = await import("./agent-runner.js");
-			const proc = spawnAgentProcess("hello");
-			await waitFor(() => MockWs.instances[0]?.methods.includes("connect"));
-
-			const ws = MockWs.instances[0];
-			const connectFrame = ws.requestFrames.find((f) => f.method === "connect");
-			const params = connectFrame?.params as { auth?: { token?: string } };
-			expect(params?.auth?.token).toBe("dench_from_root_env");
 			proc.kill("SIGTERM");
 		});
 

@@ -33,11 +33,32 @@ function buildPlistXml(params: {
   gatewayPort: number;
   stdoutPath: string;
   stderrPath: string;
+  /** Extra environment variables to inject (e.g. from apps/web/.env.local). */
+  env?: NodeJS.ProcessEnv;
 }): string {
   const nodeDir = path.dirname(params.nodePath);
   const envPath = [nodeDir, "/usr/local/bin", "/usr/bin", "/bin"]
     .filter((seg, i, arr) => arr.indexOf(seg) === i)
     .join(":");
+
+  // Base vars that the server always needs.
+  const baseEnv: Record<string, string> = {
+    PORT: String(params.port),
+    HOSTNAME: "127.0.0.1",
+    OPENCLAW_GATEWAY_PORT: String(params.gatewayPort),
+    NODE_ENV: "production",
+    PATH: envPath,
+  };
+
+  // Merge extra env vars, letting base vars take precedence for the keys we control.
+  const merged: Record<string, string> = { ...params.env };
+  for (const [k, v] of Object.entries(baseEnv)) {
+    merged[k] = v;
+  }
+
+  const envEntries = Object.entries(merged)
+    .filter(([, v]) => v !== undefined && v !== null)
+    .flatMap(([k, v]) => [`    <key>${escapeXml(k)}</key>`, `    <string>${escapeXml(String(v))}</string>`]);
 
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
@@ -55,16 +76,7 @@ function buildPlistXml(params: {
     `  <string>${escapeXml(params.workingDirectory)}</string>`,
     `  <key>EnvironmentVariables</key>`,
     `  <dict>`,
-    `    <key>PORT</key>`,
-    `    <string>${params.port}</string>`,
-    `    <key>HOSTNAME</key>`,
-    `    <string>127.0.0.1</string>`,
-    `    <key>OPENCLAW_GATEWAY_PORT</key>`,
-    `    <string>${params.gatewayPort}</string>`,
-    `    <key>NODE_ENV</key>`,
-    `    <string>production</string>`,
-    `    <key>PATH</key>`,
-    `    <string>${escapeXml(envPath)}</string>`,
+    ...envEntries,
     `  </dict>`,
     `  <key>RunAtLoad</key>`,
     `  <true/>`,
@@ -137,6 +149,8 @@ export function installWebRuntimeLaunchAgent(params: {
   stateDir: string;
   port: number;
   gatewayPort: number;
+  /** Extra environment variables to embed in the launchd plist (e.g. from apps/web/.env.local). */
+  env?: NodeJS.ProcessEnv;
 }): StartManagedWebRuntimeResult {
   const runtimeServerPath = resolveManagedWebRuntimeServerPath(params.stateDir);
   if (!existsSync(runtimeServerPath)) {
@@ -160,6 +174,7 @@ export function installWebRuntimeLaunchAgent(params: {
     gatewayPort: params.gatewayPort,
     stdoutPath: path.join(logsDir, "web-app.log"),
     stderrPath: path.join(logsDir, "web-app.err.log"),
+    env: params.env,
   });
 
   writeFileSync(plistPath, plistXml, "utf-8");

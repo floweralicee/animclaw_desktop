@@ -3,7 +3,13 @@ import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { isSubscriptionActive } from "@/lib/subscription";
 
-const PUBLIC_PATHS = ["/login", "/api/auth", "/api/billing/webhook", "/checkout", "/api/v1"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/api/auth",
+  "/api/billing/webhook",
+  "/checkout",
+  "/api/v1",
+];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname.startsWith(p));
@@ -39,5 +45,9 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg).*)"],
+  // Exclude static assets, icons, and /api/profiles (CLI health-check endpoint).
+  // /api/profiles must be excluded at the matcher level, not just in PUBLIC_PATHS,
+  // because auth() with SupabaseAdapter does a DB lookup before our callback runs —
+  // which crashes when Supabase env vars are absent in the standalone CLI runtime.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|api/profiles).*)"],
 };

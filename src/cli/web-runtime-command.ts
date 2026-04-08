@@ -339,22 +339,17 @@ async function restartGatewayDaemon(params: {
   s?.message("Installing gateway daemon…");
   await runOpenClawCommand({
     openclawCommand,
-    args: [
-      "--profile",
-      params.profile,
-      "gateway",
-      "install",
-      "--force",
-      "--port",
-      String(params.gatewayPort),
-    ],
+    // Note: gateway port is already persisted in the config file by
+    // ensureGatewayPort during bootstrap. The `gateway install` and
+    // `gateway start` subcommands do not accept a --port flag.
+    args: ["--profile", params.profile, "gateway", "install", "--force"],
     timeoutMs: 2 * 60_000,
   }).catch(() => ({ code: 1, stdout: "", stderr: "install failed" }));
 
   s?.message("Starting gateway daemon…");
   const startResult = await runOpenClawCommand({
     openclawCommand,
-    args: ["--profile", params.profile, "gateway", "start", "--port", String(params.gatewayPort)],
+    args: ["--profile", params.profile, "gateway", "start"],
     timeoutMs: 2 * 60_000,
   }).catch(() => ({ code: 1, stdout: "", stderr: "start failed" }));
 

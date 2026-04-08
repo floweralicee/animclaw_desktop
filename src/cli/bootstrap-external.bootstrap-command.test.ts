@@ -872,7 +872,7 @@ describe("bootstrapCommand always-onboard behavior", () => {
     expect(existsSync(customWorkspaceSkill)).toBe(false);
   });
 
-  it("uses inherited stdio for onboarding in interactive mode (shows wizard prompts)", async () => {
+  it("uses inherit+pipe stdio for onboarding in interactive mode (stdin/stdout inherited, stderr captured for plugin error detection)", async () => {
     const runtime: RuntimeEnv = {
       log: vi.fn(),
       error: vi.fn(),
@@ -891,10 +891,92 @@ describe("bootstrapCommand always-onboard behavior", () => {
       (call) => call.command === "openclaw" && call.args.includes("onboard"),
     );
     expect(onboardCalls).toHaveLength(1);
-    expect(onboardCalls[0]?.options?.stdio).toBe("inherit");
+    // stdin + stdout are inherited (interactive); stderr is piped so we can
+    // detect benign Telegram plugin ENOENT errors without aborting bootstrap.
+    expect(onboardCalls[0]?.options?.stdio).toEqual(["inherit", "inherit", "pipe"]);
     expect(onboardCalls[0]?.args).not.toContain("--non-interactive");
     expect(onboardCalls[0]?.args).toContain("--accept-risk");
     expect(onboardCalls[0]?.args).toContain("--skip-ui");
+  });
+
+  it("configures gateway.provider and gateway.apiKey when own-keys is chosen with env var API key", async () => {
+    const runtime: RuntimeEnv = {
+      log: vi.fn(),
+      error: vi.fn(),
+      exit: vi.fn(),
+    };
+
+    // Provide an env key so the prompt auto-detects it without a password prompt.
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test-key-0000";
+
+    // First select call: gateway choice → "own-keys"
+    // Subsequent select calls: media provider choices → "skip"
+    promptMocks.select
+      .mockResolvedValueOnce("own-keys")
+      .mockResolvedValue("skip");
+
+    await withForcedStdinTty(true, () =>
+      bootstrapCommand({ noOpen: true, skipUpdate: true }, runtime),
+    );
+
+    delete process.env.ANTHROPIC_API_KEY;
+
+    const gatewayProviderCalls = spawnCalls.filter(
+      (call) =>
+        call.command === "openclaw" &&
+        call.args.includes("config") &&
+        call.args.includes("set") &&
+        call.args.includes("gateway.provider"),
+    );
+    expect(gatewayProviderCalls.length).toBeGreaterThan(0);
+    expect(gatewayProviderCalls[0]?.args).toContain("anthropic");
+
+    const gatewayApiKeyCalls = spawnCalls.filter(
+      (call) =>
+        call.command === "openclaw" &&
+        call.args.includes("config") &&
+        call.args.includes("set") &&
+        call.args.includes("gateway.apiKey"),
+    );
+    expect(gatewayApiKeyCalls.length).toBeGreaterThan(0);
+    expect(gatewayApiKeyCalls[0]?.args).toContain("sk-ant-test-key-0000");
+
+    const modelPrimaryCalls = spawnCalls.filter(
+      (call) =>
+        call.command === "openclaw" &&
+        call.args.includes("config") &&
+        call.args.includes("set") &&
+        call.args.includes("agents.defaults.model.primary"),
+    );
+    expect(modelPrimaryCalls.length).toBeGreaterThan(0);
+    expect(modelPrimaryCalls[0]?.args).toContain("anthropic/claude-3.5-sonnet-20241022");
+  });
+
+  it("skips LLM key config in own-keys path when user skips the provider selection", async () => {
+    const runtime: RuntimeEnv = {
+      log: vi.fn(),
+      error: vi.fn(),
+      exit: vi.fn(),
+    };
+
+    // First select call: gateway choice → "own-keys"
+    // Second select call: LLM provider choice → "skip"
+    // Subsequent calls: media provider choices → "skip"
+    promptMocks.select.mockResolvedValue("skip").mockResolvedValueOnce("own-keys");
+
+    await withForcedStdinTty(true, () =>
+      bootstrapCommand({ noOpen: true, skipUpdate: true }, runtime),
+    );
+
+    // gateway.provider should NOT be set for LLM (only media keys may set it, but we return "skip")
+    const gatewayProviderCalls = spawnCalls.filter(
+      (call) =>
+        call.command === "openclaw" &&
+        call.args.includes("config") &&
+        call.args.includes("set") &&
+        call.args.includes("gateway.provider"),
+    );
+    expect(gatewayProviderCalls).toHaveLength(0);
   });
 
   it("does not call gateway install/start fallback when onboarding is always used", async () => {
